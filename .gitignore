@@ -1,0 +1,7 @@
+node_modules
+dist
+yarn.lock
+.envrc
+lib
+test.html
+pnpm-lock.yaml
