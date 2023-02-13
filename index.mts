@@ -187,7 +187,7 @@ export class RelayInfoServer {
   subs: Map<string, Filter[]> = new Map();
   connections: Set<WebSocket> = new Set();
   totalSubscriptions = 0;
-  constructor(port = 8081, host = "localhost") {
+  constructor(port = 8081, host = "0.0.0.0") {
     this.wss = new WebSocket.Server({port, host});
     this.wss.on("connection", (ws) => {
       this.connections.add(ws);
