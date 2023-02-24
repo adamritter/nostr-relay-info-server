@@ -263,12 +263,14 @@ function loadData(): boolean {
 import {Filter} from "nostr-tools";
 import WebSocket from "ws";
 
+const root = process.argv.includes("--root");
+
 export class RelayInfoServer {
   wss: WebSocket.Server;
   subs: Map<string, Filter[]> = new Map();
   connections: Set<WebSocket> = new Set();
   totalSubscriptions = 0;
-  constructor(port = 8081, host = "0.0.0.0") {
+  constructor(port = root ? 81 : 8081, host = "0.0.0.0") {
     this.wss = new WebSocket.Server({port, host});
     this.wss.on("connection", (ws) => {
       this.connections.add(ws);
@@ -298,22 +300,41 @@ export class RelayInfoServer {
             if (filter.authors && Array.isArray(filter.authors)) {
               console.log("filtering by authors", filter.authors);
               for (const author of filter.authors) {
-                const last = lastCreatedAtAndRelayIndicesPerPubkey.get(author);
-                if (last) {
-                  let eventJSON = JSON.stringify([
-                    "EVENT",
-                    sub,
-                    {
-                      created_at: last[0],
-                      pubkey: author,
-                      content: JSON.stringify(
-                        last[1].map((i) => allWriteRelays[i])
-                      ),
-                      kind: 10003,
-                    },
-                  ]);
-                  console.log("Sending: ", eventJSON);
-                  ws.send(eventJSON);
+                for (const kind of filter.kinds) {
+                  if (kind === 10003) {
+                    const last =
+                      lastCreatedAtAndRelayIndicesPerPubkey.get(author);
+                    if (last) {
+                      let eventJSON = JSON.stringify([
+                        "EVENT",
+                        sub,
+                        {
+                          created_at: last[0],
+                          pubkey: author,
+                          content: JSON.stringify(
+                            last[1].map((i) => allWriteRelays[i])
+                          ),
+                          kind: 10003,
+                        },
+                      ]);
+                      console.log("Sending: ", eventJSON);
+                      ws.send(eventJSON);
+                    }
+                  } else if (kind === 0) {
+                    const last = lastCreatedAtAndMetadataPerPubkey.get(author);
+                    if (last) {
+                      let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+                      console.log("Sending: ", eventJSON);
+                      ws.send(eventJSON);
+                    }
+                  } else if (kind === 3) {
+                    const last = lastCreatedAtAndContactsPerPubkey.get(author);
+                    if (last) {
+                      let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+                      console.log("Sending: ", eventJSON);
+                      ws.send(eventJSON);
+                    }
+                  }
                 }
               }
             }
@@ -484,7 +505,7 @@ function httpServe() {
           res.end(metadata[1]);
         } else {
           res.writeHead(404, {"Content-Type": "application/json"});
-          res.end({error: "not found"});
+          res.end({error: "metadata not found"});
         }
       } else if (req.url?.endsWith("/contacts.json")) {
         const pubkey = req.url.slice(1, -14);
@@ -494,7 +515,7 @@ function httpServe() {
           res.end(contacts[1]);
         } else {
           res.writeHead(404, {"Content-Type": "application/json"});
-          res.end({error: "not found"});
+          res.end({error: "contacts not found"});
         }
       } else if (req.url?.startsWith("/") && req.url.length === 65) {
         const pubkey = req.url.slice(1);
@@ -645,7 +666,7 @@ function httpServe() {
           );
         }
         res.write("</table>");
-      } else {
+      } else if (req.url === "" || req.url === "/") {
         res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
         let body = [];
         body.push(
@@ -653,7 +674,13 @@ function httpServe() {
         );
         body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
         body.push(
-          `<p>rbr.io is a cache for all metadata and contacts served from RAM. It contains ${lastCreatedAtAndMetadataPerPubkey.size} metadata and ${lastCreatedAtAndContactsPerPubkey.size} contacts. Content can be accessed by HTML, JSON and a relay. </p>`
+          `<p>rbr.io is a cache for all metadata and contacts served from RAM. It contains ${
+            lastCreatedAtAndMetadataPerPubkey.size
+          } metadata and ${
+            lastCreatedAtAndContactsPerPubkey.size
+          } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
+            root ? 81 : 8082
+          }). </p>`
         );
         for (let i = 0; i < 100; i++) {
           let k = popularFollowers[i];
@@ -661,13 +688,16 @@ function httpServe() {
         }
         res.write(body.join(""));
         res.end();
+      } else {
+        res.writeHead(404, {"Content-Type": "text/html"});
+        res.end("not found url " + JSON.stringify(req.url));
       }
       stats.push([Date.now() - start, req.url, Date.now()]);
       if (stats.length > 1000) {
         stats.shift();
       }
     })
-    .listen(8082);
+    .listen(root ? 80 : 8082);
 }
 
 function printFollowersWithoutMetadataStatistic() {
