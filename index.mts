@@ -270,8 +270,12 @@ export class RelayInfoServer {
   subs: Map<string, Filter[]> = new Map();
   connections: Set<WebSocket> = new Set();
   totalSubscriptions = 0;
-  constructor(port = root ? 81 : 8081, host = "0.0.0.0") {
-    this.wss = new WebSocket.Server({port, host});
+  constructor(server = undefined, port = root ? 81 : 8081, host = "0.0.0.0") {
+    if (server) {
+      this.wss = new WebSocket.Server({server});
+    } else {
+      this.wss = new WebSocket.Server({port, host});
+    }
     this.wss.on("connection", (ws) => {
       this.connections.add(ws);
       ws.on("message", (message) => {
@@ -289,51 +293,49 @@ export class RelayInfoServer {
           const filters = data.slice(2);
           this.totalSubscriptions++;
           this.subs.set(sub, filters);
-          console.log("sub", sub, filters);
           for (const filter of filters) {
             if (filter.kinds && !Array.isArray(filter.kinds)) {
               continue;
             }
-            if (filter.kinds && !filter.kinds.includes(10003)) {
+            if (
+              filter.kinds &&
+              !filter.kinds.includes(10003) &&
+              !filter.kinds.includes(0) &&
+              !filter.kinds.includes(3)
+            ) {
               continue;
             }
             if (filter.authors && Array.isArray(filter.authors)) {
-              console.log("filtering by authors", filter.authors);
               for (const author of filter.authors) {
-                for (const kind of filter.kinds) {
-                  if (kind === 10003) {
-                    const last =
-                      lastCreatedAtAndRelayIndicesPerPubkey.get(author);
-                    if (last) {
-                      let eventJSON = JSON.stringify([
-                        "EVENT",
-                        sub,
-                        {
-                          created_at: last[0],
-                          pubkey: author,
-                          content: JSON.stringify(
-                            last[1].map((i) => allWriteRelays[i])
-                          ),
-                          kind: 10003,
-                        },
-                      ]);
-                      console.log("Sending: ", eventJSON);
-                      ws.send(eventJSON);
-                    }
-                  } else if (kind === 0) {
-                    const last = lastCreatedAtAndMetadataPerPubkey.get(author);
-                    if (last) {
-                      let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-                      console.log("Sending: ", eventJSON);
-                      ws.send(eventJSON);
-                    }
-                  } else if (kind === 3) {
-                    const last = lastCreatedAtAndContactsPerPubkey.get(author);
-                    if (last) {
-                      let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-                      console.log("Sending: ", eventJSON);
-                      ws.send(eventJSON);
-                    }
+                if (!filter.kinds || filter.kinds.includes(10003)) {
+                  const last =
+                    lastCreatedAtAndRelayIndicesPerPubkey.get(author);
+                  if (last) {
+                    let eventJSON = JSON.stringify([
+                      "EVENT",
+                      sub,
+                      {
+                        created_at: last[0],
+                        pubkey: author,
+                        content: JSON.stringify(
+                          last[1].map((i) => allWriteRelays[i])
+                        ),
+                        kind: 10003,
+                      },
+                    ]);
+                    ws.send(eventJSON);
+                  }
+                } else if (!filter.kinds || filter.kinds.includes(0)) {
+                  const last = lastCreatedAtAndMetadataPerPubkey.get(author);
+                  if (last) {
+                    let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+                    ws.send(eventJSON);
+                  }
+                } else if (!filter.kinds || filter.kinds.includes(3)) {
+                  const last = lastCreatedAtAndContactsPerPubkey.get(author);
+                  if (last) {
+                    let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+                    ws.send(eventJSON);
                   }
                 }
               }
@@ -449,7 +451,7 @@ function profile(pubkey: string) {
     body.push(
       `<a href='/${nip19.npubEncode(
         pubkey
-      )}'><img src='${picture}' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,60px); max-width: min(100%,60px);'></a><br>`
+      )}'><img src='${picture}' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,60px); max-width: min(100%,60px);' width=60 height=60></a><br>`
     );
   } else {
     // just leave 60px
@@ -482,223 +484,221 @@ function profile(pubkey: string) {
 function httpServe() {
   let stats: any[] = [];
   let http = require("http");
-  http
-    .createServer(function (req, res) {
-      let start = Date.now();
-      if (req.url?.endsWith("/")) {
-        req.url = req.url.slice(0, -1);
+  let server = http.createServer(function (req, res) {
+    let start = Date.now();
+    if (req.url?.endsWith("/")) {
+      req.url = req.url.slice(0, -1);
+    }
+    if (req.url?.startsWith("/npub")) {
+      let npub = req.url.slice(1);
+      // Decode with nostr-tools
+      let hex = nip19.decode(npub);
+      req.url = "/" + hex.data;
+    }
+    if (req.url === "/favicon.ico") {
+      res.writeHead(200, {"Content-Type": "image/x-icon"});
+      res.end();
+    } else if (req.url?.endsWith("/metadata.json")) {
+      const pubkey = req.url.slice(1, -14);
+      const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+      if (metadata) {
+        res.writeHead(200, {"Content-Type": "application/json"});
+        res.end(metadata[1]);
+      } else {
+        res.writeHead(404, {"Content-Type": "application/json"});
+        res.end({error: "metadata not found"});
       }
-      if (req.url?.startsWith("/npub")) {
-        let npub = req.url.slice(1);
-        // Decode with nostr-tools
-        let hex = nip19.decode(npub);
-        req.url = "/" + hex.data;
+    } else if (req.url?.endsWith("/contacts.json")) {
+      const pubkey = req.url.slice(1, -14);
+      const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+      if (contacts) {
+        res.writeHead(200, {"Content-Type": "application/json"});
+        res.end(contacts[1]);
+      } else {
+        res.writeHead(404, {"Content-Type": "application/json"});
+        res.end({error: "contacts not found"});
       }
-      if (req.url === "/favicon.ico") {
-        res.writeHead(200, {"Content-Type": "image/x-icon"});
-        res.end();
-      } else if (req.url?.endsWith("/metadata.json")) {
-        const pubkey = req.url.slice(1, -14);
-        const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-        if (metadata) {
-          res.writeHead(200, {"Content-Type": "application/json"});
-          res.end(metadata[1]);
-        } else {
-          res.writeHead(404, {"Content-Type": "application/json"});
-          res.end({error: "metadata not found"});
-        }
-      } else if (req.url?.endsWith("/contacts.json")) {
-        const pubkey = req.url.slice(1, -14);
-        const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
-        if (contacts) {
-          res.writeHead(200, {"Content-Type": "application/json"});
-          res.end(contacts[1]);
-        } else {
-          res.writeHead(404, {"Content-Type": "application/json"});
-          res.end({error: "contacts not found"});
-        }
-      } else if (req.url?.startsWith("/") && req.url.length === 65) {
-        const pubkey = req.url.slice(1);
-        const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-        const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
-        let md = metadata && JSON.parse(metadata[1]);
-        let md2 = md && JSON.parse(md.content);
+    } else if (req.url?.startsWith("/") && req.url.length === 65) {
+      const pubkey = req.url.slice(1);
+      const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+      const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+      let md = metadata && JSON.parse(metadata[1]);
+      let md2 = md && JSON.parse(md.content);
 
-        if (metadata || contacts) {
-          res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
-
-          let body: string[] = [];
-          let name = md2?.display_name || md2?.name || md2?.nip05 || pubkey;
-          body.push(`<head><title>${name} | rbr.bio</title></head>`);
-          if (md2?.banner) {
-            body.push(
-              `<img src="${md2.banner}" height="200" width="100%" style="object-fit: cover"/>`
-            );
-          }
-          body.push(
-            "<style>body {background-color: #121212; color: white;}</style>"
-          );
-          body.push(
-            "<style>a {color: #1d9bf0; text-decoration: none;}</style>"
-          );
-
-          if (metadata) {
-            body.push(
-              '<div style="background-image: linear-gradient( to bottom, transparent, var(--main-color) ), url(https://cdn.jb55.com/s/voronoi3.gif);" />'
-            );
-            body.push('<span style="display: flex">');
-            if (md2.picture) {
-              body.push(
-                "<img src='" +
-                  md2.picture +
-                  "' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,200px); max-width: min(100%,200px);'><br>"
-              );
-            }
-            body.push("<div style='margin-left: 1em'>");
-            if (md2.display_name) {
-              body.push(
-                "<b style='font-size: 20px'>" + md2.display_name + "</b>"
-              );
-            }
-            if (md2.name) {
-              body.push(" @" + md2.name);
-            }
-            body.push("<br><br>");
-            if (md2.nip05) {
-              body.push(
-                "<span style='color: #34ba7c'>" + md2.nip05 + "</span><br><br>"
-              );
-            }
-            if (md2.about) {
-              body.push(md2.about + "<br><br>");
-            }
-            if (md2.website) {
-              body.push(
-                "<a href='" +
-                  md2.website +
-                  "' target='_blank'>" +
-                  md2.website +
-                  "</a><br><br>"
-              );
-            }
-            for (let k in md2) {
-              if (
-                k === "picture" ||
-                k === "about" ||
-                k === "website" ||
-                k === "nip05" ||
-                k === "name" ||
-                k === "display_name" ||
-                k === "banner"
-              )
-                continue;
-              body.push(k + ": " + md2[k] + "<br>");
-            }
-            body.push("</div></span>");
-            body.push(
-              "<a href='/" + pubkey + "/metadata.json'>Metadata JSON</a> <br>"
-            );
-          }
-          body.push("<br>Hex pubkey: " + pubkey + "<br>");
-          body.push("Npub: " + nip19.npubEncode(pubkey) + "<br><br>");
-          body.push(
-            "Number of followers: " + followers.get(pubkey)?.size + "<br>"
-          );
-
-          if (contacts) {
-            body.push(
-              "<a href='/" + pubkey + "/contacts.json'>Contacts JSON</a> <br>"
-            );
-
-            let md = JSON.parse(contacts[1]);
-
-            try {
-              let md2 = JSON.parse(md.content);
-              body.push(
-                "<table><tr><th>Relay</th><th>Write</th><th>Read</th></tr>"
-              );
-              for (let [k, v] of Object.entries(md2)) {
-                body.push("<tr><td>");
-                body.push(k);
-                body.push("</td><td>");
-                body.push(v.write);
-                body.push("</td><td>");
-                body.push(v.read);
-                body.push("</td></tr>");
-              }
-              body.push("</table>");
-            } catch (e) {}
-            body.push("<br>Following: <br><br>");
-            // horizontal breakable flex
-            body.push(
-              '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
-            );
-            for (let tag of md.tags
-              .slice()
-              .sort(
-                (a: string[], b: string[]) =>
-                  (followers.get(b[1]?.toLocaleLowerCase())?.size || 0) -
-                  (followers.get(a[1]?.toLocaleLowerCase())?.size || 0)
-              )) {
-              let pubkey = tag[1]?.toLowerCase();
-              body.push(profile(pubkey));
-            }
-          }
-          body.push("<a href='/'>Home</a> <br>");
-          res.write(body.join(""));
-          res.end();
-        } else {
-          res.writeHead(404, {"Content-Type": "text/html"});
-          res.end("not found");
-        }
-      } else if (req.url === "/stats") {
+      if (metadata || contacts) {
         res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
-        res.write("<table><tr><th>ms</th><th>URL</th><th>Date</th></tr>");
-        for (let i = 0; i < stats.length; i++) {
-          res.write(
-            "<tr><td>" +
-              stats[i][0] +
-              "</td><td>" +
-              stats[i][1] +
-              "</td><td>" +
-              stats[i][2] +
-              "</td></tr>"
+
+        let body: string[] = [];
+        let name = md2?.display_name || md2?.name || md2?.nip05 || pubkey;
+        body.push(`<head><title>${name} | rbr.bio</title></head>`);
+        if (md2?.banner) {
+          body.push(
+            `<img src="${md2.banner}" height="200" width="100%" style="object-fit: cover"/>`
           );
         }
-        res.write("</table>");
-      } else if (req.url === "" || req.url === "/") {
-        res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
-        let body = [];
         body.push(
           "<style>body {background-color: #121212; color: white;}</style>"
         );
         body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
-        body.push(
-          `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${
-            lastCreatedAtAndMetadataPerPubkey.size
-          } metadata (probably half of it is fake, TODO: fix) and ${
-            lastCreatedAtAndContactsPerPubkey.size
-          } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
-            root ? 81 : 8082
-          }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
-        );
-        body.push(`<p><a href="/stats">Serving stats</a></p>`);
-        for (let i = 0; i < 100; i++) {
-          let k = popularFollowers[i];
-          body.push(profile(k));
+
+        if (metadata) {
+          body.push(
+            '<div style="background-image: linear-gradient( to bottom, transparent, var(--main-color) ), url(https://cdn.jb55.com/s/voronoi3.gif);" />'
+          );
+          body.push('<span style="display: flex">');
+          if (md2.picture) {
+            body.push(
+              "<img src='" +
+                md2.picture +
+                "' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,200px); max-width: min(100%,200px);'><br>"
+            );
+          }
+          body.push("<div style='margin-left: 1em'>");
+          if (md2.display_name) {
+            body.push(
+              "<b style='font-size: 20px'>" + md2.display_name + "</b>"
+            );
+          }
+          if (md2.name) {
+            body.push(" @" + md2.name);
+          }
+          body.push("<br><br>");
+          if (md2.nip05) {
+            body.push(
+              "<span style='color: #34ba7c'>" + md2.nip05 + "</span><br><br>"
+            );
+          }
+          if (md2.about) {
+            body.push(md2.about + "<br><br>");
+          }
+          if (md2.website) {
+            body.push(
+              "<a href='" +
+                md2.website +
+                "' target='_blank'>" +
+                md2.website +
+                "</a><br><br>"
+            );
+          }
+          for (let k in md2) {
+            if (
+              k === "picture" ||
+              k === "about" ||
+              k === "website" ||
+              k === "nip05" ||
+              k === "name" ||
+              k === "display_name" ||
+              k === "banner"
+            )
+              continue;
+            body.push(k + ": " + md2[k] + "<br>");
+          }
+          body.push("</div></span>");
+          body.push(
+            "<a href='/" + pubkey + "/metadata.json'>Metadata JSON</a> <br>"
+          );
         }
+        body.push("<br>Hex pubkey: " + pubkey + "<br>");
+        body.push("Npub: " + nip19.npubEncode(pubkey) + "<br><br>");
+        body.push(
+          "Number of followers: " + followers.get(pubkey)?.size + "<br>"
+        );
+
+        if (contacts) {
+          body.push(
+            "<a href='/" + pubkey + "/contacts.json'>Contacts JSON</a> <br>"
+          );
+
+          let md = JSON.parse(contacts[1]);
+
+          try {
+            let md2 = JSON.parse(md.content);
+            body.push(
+              "<table><tr><th>Relay</th><th>Write</th><th>Read</th></tr>"
+            );
+            for (let [k, v] of Object.entries(md2)) {
+              body.push("<tr><td>");
+              body.push(k);
+              body.push("</td><td>");
+              body.push(v.write);
+              body.push("</td><td>");
+              body.push(v.read);
+              body.push("</td></tr>");
+            }
+            body.push("</table>");
+          } catch (e) {}
+          body.push("<br>Following: <br><br>");
+          // horizontal breakable flex
+          body.push(
+            '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
+          );
+          for (let tag of md.tags
+            .slice()
+            .sort(
+              (a: string[], b: string[]) =>
+                (followers.get(b[1]?.toLocaleLowerCase())?.size || 0) -
+                (followers.get(a[1]?.toLocaleLowerCase())?.size || 0)
+            )) {
+            let pubkey = tag[1]?.toLowerCase();
+            body.push(profile(pubkey));
+          }
+        }
+        body.push("<a href='/'>Home</a> <br>");
         res.write(body.join(""));
         res.end();
       } else {
         res.writeHead(404, {"Content-Type": "text/html"});
-        res.end("not found url " + JSON.stringify(req.url));
+        res.end("not found");
       }
-      stats.push([Date.now() - start, req.url, Date.now()]);
-      if (stats.length > 1000) {
-        stats.shift();
+    } else if (req.url === "/stats") {
+      res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+      res.write("<table><tr><th>ms</th><th>URL</th><th>Date</th></tr>");
+      for (let i = 0; i < stats.length; i++) {
+        res.write(
+          "<tr><td>" +
+            stats[i][0] +
+            "</td><td>" +
+            stats[i][1] +
+            "</td><td>" +
+            stats[i][2] +
+            "</td></tr>"
+        );
       }
-    })
-    .listen(root ? 80 : 8082);
+      res.write("</table>");
+    } else if (req.url === "" || req.url === "/") {
+      res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+      let body = [];
+      body.push(
+        "<style>body {background-color: #121212; color: white;}</style>"
+      );
+      body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
+      body.push(
+        `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${
+          lastCreatedAtAndMetadataPerPubkey.size
+        } metadata (probably half of it is fake, TODO: fix) and ${
+          lastCreatedAtAndContactsPerPubkey.size
+        } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
+          root ? 81 : 8082
+        }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
+      );
+      body.push(`<p><a href="/stats">Serving stats</a></p>`);
+      for (let i = 0; i < 100; i++) {
+        let k = popularFollowers[i];
+        body.push(profile(k));
+      }
+      res.write(body.join(""));
+      res.end();
+    } else {
+      res.writeHead(404, {"Content-Type": "text/html"});
+      res.end("not found url " + JSON.stringify(req.url));
+    }
+    stats.push([Date.now() - start, req.url, Date.now()]);
+    if (stats.length > 1000) {
+      stats.shift();
+    }
+  });
+  server.listen(root ? 80 : 8082);
+  return server;
 }
 
 function printFollowersWithoutMetadataStatistic() {
@@ -782,16 +782,17 @@ if (updateData) {
   continueServe();
 } else if (updateMetadata) {
   loadData();
-  new RelayInfoServer();
   computeFollowers();
   printFollowersWithoutMetadataStatistic();
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
   updateMetadataForPopularAuthors();
+  let server = httpServe();
+  new RelayInfoServer(server);
 } else {
   loadData();
-  new RelayInfoServer();
   computeFollowers();
   printFollowersWithoutMetadataStatistic();
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
-  httpServe();
+  let server = httpServe();
+  new RelayInfoServer(server);
 }
