@@ -674,13 +674,13 @@ function httpServe() {
         );
         body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
         body.push(
-          `<p>rbr.io is a cache for all metadata and contacts served from RAM. It contains ${
+          `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${
             lastCreatedAtAndMetadataPerPubkey.size
           } metadata (probably half of it is fake, TODO: fix) and ${
             lastCreatedAtAndContactsPerPubkey.size
           } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
             root ? 81 : 8082
-          }). </p>`
+          }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
         );
         for (let i = 0; i < 100; i++) {
           let k = popularFollowers[i];
