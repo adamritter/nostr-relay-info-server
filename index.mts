@@ -676,7 +676,7 @@ function httpServe() {
         body.push(
           `<p>rbr.io is a cache for all metadata and contacts served from RAM. It contains ${
             lastCreatedAtAndMetadataPerPubkey.size
-          } metadata and ${
+          } metadata (probably half of it is fake, TODO: fix) and ${
             lastCreatedAtAndContactsPerPubkey.size
           } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
             root ? 81 : 8082
