@@ -665,6 +665,7 @@ function httpServe() {
         );
       }
       res.write("</table>");
+      res.end();
     } else if (req.url === "" || req.url === "/") {
       res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
       let body = [];
