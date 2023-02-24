@@ -682,6 +682,7 @@ function httpServe() {
             root ? 81 : 8082
           }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
         );
+        body.push(`<p><a href="/stats">Serving stats</a></p>`);
         for (let i = 0; i < 100; i++) {
           let k = popularFollowers[i];
           body.push(profile(k));
