@@ -4,6 +4,8 @@ import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
 import {nip19} from "nostr-tools";
 
+const v8 = require('v8')
+
 // Target speed: 40MB/sec
 
 const oldestCreatedAtPerRelay = new Map<string, number>();
@@ -53,6 +55,7 @@ function computeFollowers() {
 }
 
 function saveData() {
+  console.log("Saving data, ", v8.getHeapStatistics())
   let time = Date.now();
   const data = {
     oldestCreatedAtPerRelay: Object.fromEntries(oldestCreatedAtPerRelay),
@@ -410,6 +413,7 @@ async function continueServe() {
     );
   }
   new RelayInfoServer();
+  setTimeout(saveData, 10 * 1000);
   setInterval(saveData, 60 * 1000);
 }
 
