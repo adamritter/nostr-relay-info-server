@@ -4,6 +4,8 @@ import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
 import {nip19} from "nostr-tools";
 
+const v8 = require('v8')
+
 // Target speed: 40MB/sec
 
 const oldestCreatedAtPerRelay = new Map<string, number>();
@@ -53,6 +55,7 @@ function computeFollowers() {
 }
 
 function saveData() {
+  console.log("Saving data, ", v8.getHeapStatistics())
   let time = Date.now();
   const data = {
     oldestCreatedAtPerRelay: Object.fromEntries(oldestCreatedAtPerRelay),
@@ -410,6 +413,7 @@ async function continueServe() {
     );
   }
   new RelayInfoServer();
+  setTimeout(saveData, 10 * 1000);
   setInterval(saveData, 60 * 1000);
 }
 
@@ -724,7 +728,7 @@ function app(
       } metadata (probably half of it is fake, TODO: fix) and ${
         lastCreatedAtAndContactsPerPubkey.size
       } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
-        root ? 81 : 8082
+        root ? 81 : 8080
       }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
     );
     body.push(`<p><a href="/stats">Serving stats</a></p>`);
@@ -760,7 +764,7 @@ function httpServe() {
       }
     }
   });
-  let port = root ? 80 : 8082;
+  let port = root ? 80 : 8080;
   server.listen(port);
   console.log("http server listening on port " + port);
   return server;
