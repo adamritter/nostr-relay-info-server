@@ -491,6 +491,28 @@ function profile(pubkey: string) {
   return body.join("");
 }
 
+function top() {
+  let body = [];
+  // Home link
+  body.push(`<a href='/'>Home</a>`);
+  // Search input box
+  body.push(
+    ` <input type='text' name='q' placeholder='Search' style='width: 100%; max-width: 400px' oninput='search(this.value)' />
+<script>
+function search(q) {
+  if (q.startsWith('npub') && q.length === 63) {
+    window.location.href = '/' + q;
+  }
+  if (q.length === 64 && /^[0-9a-fA-F]+$/.test(q)) {
+    window.location.href = '/' + q.toLowerCase();
+  }
+}
+</script><br>
+    `
+  );
+  return body.join("");
+}
+
 function app(
   req: IncomingMessage,
   res: ServerResponse,
@@ -501,7 +523,7 @@ function app(
   if (req.url?.endsWith("/")) {
     req.url = req.url.slice(0, -1);
   }
-  if (req.url?.startsWith("/npub")) {
+  if (req.url?.startsWith("/npub") && req.url.length === 64) {
     let npub = req.url.slice(1);
     // Decode with nostr-tools
     let hex = nip19.decode(npub);
@@ -543,6 +565,7 @@ function app(
       let body: string[] = [];
       let name = md2?.display_name || md2?.name || md2?.nip05 || pubkey;
       body.push(`<head><title>${name} | rbr.bio</title></head>`);
+      body.push(top());
       if (md2?.banner) {
         body.push(
           `<img src="${md2.banner}" height="200" width="100%" style="object-fit: cover"/>`
@@ -656,10 +679,14 @@ function app(
       res.end();
     } else {
       res.writeHead(404, {"Content-Type": "text/html"});
+      res.write(top());
       res.end("not found");
     }
   } else if (req.url === "/stats") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+    res.write(`<head><title>Stats | rbr.bio</title></head>`);
+    res.write(top());
+    res.write("<h1>Stats</h1>");
     res.write("<table><tr><th>ms</th><th>URL</th><th>Date</th></tr>");
     for (let i = 0; i < stats.length; i++) {
       res.write(
@@ -687,8 +714,10 @@ function app(
   } else if (req.url === "" || req.url === "/") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     let body = [];
+    body.push(`<head><title>rbr.bio</title></head>`);
     body.push("<style>body {background-color: #121212; color: white;}</style>");
     body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
+    body.push(top());
     body.push(
       `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${
         lastCreatedAtAndMetadataPerPubkey.size
