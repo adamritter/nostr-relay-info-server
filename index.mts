@@ -816,8 +816,16 @@ function app(
     body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
     body.push(top());
     body.push(
-      `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${lastCreatedAtAndMetadataPerPubkey.size} metadata (probably half of it is fake, TODO: fix) and ${lastCreatedAtAndContactsPerPubkey.size} contacts. Content can be accessed by HTML, JSON and a relay (wss://rbr.bio). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
+      `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${lastCreatedAtAndMetadataPerPubkey.size} metadata (probably half of it is fake, TODO: fix) and ${lastCreatedAtAndContactsPerPubkey.size} contacts. Content can be accessed by HTML, JSON and a relay (wss://rbr.bio). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>
+      <p>If you plan to integrate this service into your client (which I recommend), please use JSON queries instead of the relay API (as they will be cached in the future), and contact me on Nostr (or find me in person at Nostrica):</p>
+      `
     );
+    body.push(
+      profile(
+        "6e3f51664e19e082df5217fd4492bb96907405a0b27028671dd7f297b688608c"
+      )
+    );
+
     body.push(`<p><a href="/stats">Serving stats</a></p>`);
     for (let i = 0; i < 100; i++) {
       let k = popularFollowers[i];
