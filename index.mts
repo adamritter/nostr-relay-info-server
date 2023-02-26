@@ -805,13 +805,7 @@ function app(
     body.push("<style>a {color: #1d9bf0; text-decoration: none;}</style>");
     body.push(top());
     body.push(
-      `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${
-        lastCreatedAtAndMetadataPerPubkey.size
-      } metadata (probably half of it is fake, TODO: fix) and ${
-        lastCreatedAtAndContactsPerPubkey.size
-      } contacts. Content can be accessed by HTML, JSON and a relay (on port ${
-        root ? 81 : 8080
-      }, not working yet I think). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
+      `<p>rbr.bio is a cache for all metadata and contacts served from RAM. It contains ${lastCreatedAtAndMetadataPerPubkey.size} metadata (probably half of it is fake, TODO: fix) and ${lastCreatedAtAndContactsPerPubkey.size} contacts. Content can be accessed by HTML, JSON and a relay (wss://rbr.bio). Contribute at <a target="_blank" href="https://github.com/adamritter/nostr-relay-info-server">https://github.com/adamritter/nostr-relay-info-server</a></p>`
     );
     body.push(`<p><a href="/stats">Serving stats</a></p>`);
     for (let i = 0; i < 100; i++) {
