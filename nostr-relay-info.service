@@ -4,7 +4,7 @@ Documentation=https://rbr.bio
 After=network.target
 
 [Service]
-Environment=NODE_PORT=8082
+Environment=NODE_PORT=8080
 Type=simple
 User=root
 ExecStart=/usr/bin/node /root/nostr-relay-info-server/dist/index.js
