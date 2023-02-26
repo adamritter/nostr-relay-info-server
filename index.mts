@@ -841,10 +841,11 @@ function httpServe() {
   let stats: any[] = [];
   let errors: any[] = [];
   let server = createServer(function (req, res) {
+    const original_url = req.url;
     try {
       app(req, res, stats, errors);
     } catch (e) {
-      console.error("Error serving ", req.url, ":\n", e);
+      console.error("Error serving ", original_url, ":\n", e);
       errors.push([req.url, e]);
       if (errors.length > 100) {
         errors.shift();
