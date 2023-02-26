@@ -59,7 +59,7 @@
   },
   "scripts": {
     "run": "esbuild index.mts  --bundle  --outdir=dist --sourcemap --platform=node && node dist/index.js",
-    "build": "node build.js",
+    "build": "esbuild index.mts  --bundle  --outdir=dist --sourcemap --platform=node",
     "pretest": "node build.js",
     "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
     "publish": "npm i && npm run build && npm run test && npm publish"
