@@ -1,5 +1,5 @@
 <a href='/'>Home</a>
-<input type='text' name='q' placeholder='Search' autocomplete='off' style='width: 100%; max-width: 400px' oninput='search(this.value)' /><br>
+<input type='text' name='q' id='q' placeholder='Search' autocomplete='off' style='width: 100%; max-width: 400px' oninput='search(this.value)' /><br>
     <span id='search-results' style='border-left: 40px'></span>
 <script>
 function search(q) {
@@ -16,7 +16,7 @@ function search(q) {
   }
   // fetch data
   fetch('/search/' + q + '.json').then((r) => r.json()).then((r) => {
-    if (el) {
+    if (el && q == document.getElementById('q').value) {
       el.innerHTML = '';
       for (let i = 0; i < r.length; i++) {
         let data = r[i]
