@@ -5,10 +5,12 @@ After=network.target
 
 [Service]
 Environment=NODE_PORT=8080
+Environment=NODE_OPTIONS="--max-old-space-size=8192"
 Type=simple
 User=root
 ExecStart=/usr/bin/node /root/nostr-relay-info-server/dist/index.js
-Restart=on-failure
+Restart=always
+RuntimeMaxSec=3000s
 WorkingDirectory=/root/nostr-relay-info-server
 
 [Install]
