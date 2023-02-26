@@ -786,8 +786,17 @@ function app(
       );
     }
     res.write("</table>");
+    if (stats.length > 1) {
+      let rps = stats.length / ((Date.now() - stats[0][2]) / 1000);
+      res.write("<br>Requests per second: " + rps.toFixed(2));
+      // Max possible requests per second: time passed divided by average time per request
+      let maxRps =
+        ((Date.now() - stats[0][2]) / stats.reduce((a, b) => a + b[0], 0)) *
+        stats.length;
+      res.write("<br>Max possible requests per second: " + maxRps);
+    }
     if (errors.length > 0) {
-      res.write("<table><tr><th>URL</th><th>Error</th></tr>");
+      res.write("Errors:<br><table><tr><th>URL</th><th>Error</th></tr>");
       for (let i = 0; i < errors.length; i++) {
         res.write(
           "<tr><td>" + errors[i][0] + "</td><td>" + errors[i][1] + "</td></tr>"
