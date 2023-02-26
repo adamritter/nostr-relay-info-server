@@ -548,7 +548,8 @@ function app(
   stats: any[],
   errors: [string, any][]
 ) {
-  let start = performance.now();
+  const start = performance.now();
+  const original_url = req.url;
   if (req.url?.endsWith("/")) {
     req.url = req.url.slice(0, -1);
   }
@@ -828,7 +829,7 @@ function app(
     res.writeHead(404, {"Content-Type": "text/html"});
     res.end("not found url " + JSON.stringify(req.url));
   }
-  stats.push([performance.now() - start, req.url, Date.now()]);
+  stats.push([performance.now() - start, original_url, Date.now()]);
   if (stats.length > 1000) {
     stats.shift();
   }
