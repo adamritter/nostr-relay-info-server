@@ -4,7 +4,7 @@ import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
 import {nip19} from "nostr-tools";
 
-const v8 = require('v8')
+const v8 = require("v8");
 
 // Target speed: 40MB/sec
 
@@ -29,9 +29,51 @@ const lastCreatedAtAndRelayIndicesPerPubkey = new Map<
 
 const lastCreatedAtAndMetadataPerPubkey = new Map<string, [number, string]>();
 const lastCreatedAtAndContactsPerPubkey = new Map<string, [number, string]>();
+const authors: [string, string, number][] = []; // [name, pubkey, followerCount]
 
 const followers = new Map<string, Set<string>>();
 let popularFollowers: string[] = [];
+
+function computeAuthors() {
+  const start = Date.now();
+  for (let [pubkey, [_, metadata]] of lastCreatedAtAndMetadataPerPubkey) {
+    try {
+      let metadataInfos = JSON.parse(metadata);
+      let content = JSON.parse(metadataInfos.content);
+      if (content.name) {
+        authors.push([
+          content.name.toLowerCase(),
+          pubkey,
+          followers.get(pubkey)?.size || 0,
+        ]);
+      }
+      if (content.display_name) {
+        if (
+          content.display_name.toLowerCase() !== content.name?.toLowerCase()
+        ) {
+          authors.push([
+            content.display_name.toLowerCase(),
+            pubkey,
+            followers.get(pubkey)?.size || 0,
+          ]);
+        }
+        // look for space
+        let space = content.display_name.indexOf(" ");
+        if (space !== -1) {
+          authors.push([
+            content.display_name.substr(space + 1).toLowerCase(),
+            pubkey,
+            followers.get(pubkey)?.size || 0,
+          ]);
+        }
+      }
+    } catch (e) {
+      continue;
+    }
+  }
+  authors.sort((a, b) => (b[0] < a[0] ? 1 : -1));
+  console.log("computed authors in ", Date.now() - start, "ms");
+}
 
 function computeFollowers() {
   for (let [pubkey, [_, contacts]] of lastCreatedAtAndContactsPerPubkey) {
@@ -55,7 +97,7 @@ function computeFollowers() {
 }
 
 function saveData() {
-  console.log("Saving data, ", v8.getHeapStatistics())
+  console.log("Saving data, ", v8.getHeapStatistics());
   let time = Date.now();
   const data = {
     oldestCreatedAtPerRelay: Object.fromEntries(oldestCreatedAtPerRelay),
@@ -494,27 +536,10 @@ function profile(pubkey: string) {
   body.push(`${followers.get(pubkey)?.size || 0}  followers<br></span></span>`);
   return body.join("");
 }
+const fs = require("fs");
 
 function top() {
-  let body = [];
-  // Home link
-  body.push(`<a href='/'>Home</a>`);
-  // Search input box
-  body.push(
-    ` <input type='text' name='q' placeholder='Search' style='width: 100%; max-width: 400px' oninput='search(this.value)' />
-<script>
-function search(q) {
-  if (q.startsWith('npub') && q.length === 63) {
-    window.location.href = '/' + q;
-  }
-  if (q.length === 64 && /^[0-9a-fA-F]+$/.test(q)) {
-    window.location.href = '/' + q.toLowerCase();
-  }
-}
-</script><br>
-    `
-  );
-  return body.join("");
+  return fs.readFileSync("top.html");
 }
 
 function app(
@@ -555,6 +580,63 @@ function app(
     } else {
       res.writeHead(404, {"Content-Type": "application/json"});
       res.end({error: "contacts not found"});
+    }
+  } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
+    const query = req.url.slice(8, -5);
+    if (query.length === 0) {
+      res.writeHead(200, {"Content-Type": "application/json"});
+      res.end("[]");
+    } else {
+      // binary search in authors array first and last index that starts with query
+      let first = 0;
+      let last = authors.length - 1;
+      let middle = Math.floor((first + last) / 2);
+      while (first <= last) {
+        if (authors[middle][0].startsWith(query)) {
+          break;
+        } else if (authors[middle][0] < query) {
+          first = middle + 1;
+        } else {
+          last = middle - 1;
+        }
+        middle = Math.floor((first + last) / 2);
+      }
+      if (first > last) {
+        res.writeHead(200, {"Content-Type": "application/json"});
+        res.end("[]");
+      } else {
+        let firstIndex = middle;
+        while (firstIndex > 0 && authors[firstIndex - 1][0].startsWith(query)) {
+          firstIndex--;
+        }
+        res.writeHead(200, {"Content-Type": "application/json"});
+        let r: any[] = [];
+        let lowest = 0;
+        while (authors[firstIndex][0]?.startsWith(query)) {
+          if (
+            authors[firstIndex][2] >= lowest &&
+            !r.find((a) => a[1] === authors[firstIndex][1])
+          ) {
+            r.push(authors[firstIndex]);
+            if (r.length > 5) {
+              const id: string = r.find((a) => a[2] === lowest)?.[1];
+              r = r.filter((a) => a[1] !== id);
+              lowest = r.reduce((a, b) => (a[2] < b[2] ? a : b))[2];
+            }
+          }
+          firstIndex++;
+        }
+        r.sort((a, b) => b[2] - a[2]);
+        const r2 = [];
+        for (let i = 0; i < r.length; i++) {
+          const a = r[i];
+          const md = lastCreatedAtAndMetadataPerPubkey.get(a[1]);
+          if (md) {
+            r2.push([a[2], JSON.parse(md[1])]);
+          }
+        }
+        res.end(JSON.stringify(r2));
+      }
     }
   } else if (req.url?.startsWith("/") && req.url.length === 65) {
     const pubkey = req.url.slice(1);
@@ -854,6 +936,7 @@ if (updateData) {
 } else if (updateMetadata) {
   loadData();
   computeFollowers();
+  computeAuthors();
   printFollowersWithoutMetadataStatistic();
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
   updateMetadataForPopularAuthors();
@@ -862,6 +945,7 @@ if (updateData) {
 } else {
   loadData();
   computeFollowers();
+  computeAuthors();
   printFollowersWithoutMetadataStatistic();
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
   let server = httpServe();

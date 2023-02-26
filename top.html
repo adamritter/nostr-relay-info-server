@@ -1,0 +1,33 @@
+<a href='/'>Home</a>
+<input type='text' name='q' placeholder='Search' autocomplete='off' style='width: 100%; max-width: 400px' oninput='search(this.value)' /><br>
+    <span id='search-results' style='border-left: 40px'></span>
+<script>
+function search(q) {
+    let el = document.getElementById('search-results');
+  el.innerHTML = '';
+  if (q.startsWith('npub') && q.length === 63) {
+    window.location.href = '/' + q;
+  }
+  if (q.length === 64 && /^[0-9a-fA-F]+$/.test(q)) {
+    window.location.href = '/' + q.toLowerCase();
+  }
+  if (q == "") {
+    return
+  }
+  // fetch data
+  fetch('/search/' + q + '.json').then((r) => r.json()).then((r) => {
+    if (el) {
+      el.innerHTML = '';
+      for (let i = 0; i < r.length; i++) {
+        let data = r[i]
+        let followerCount = data[0]
+        let metaData = data[1]
+        let content = JSON.parse(metaData.content)
+        let name = content.name
+        let displayName = content.display_name
+        el.innerHTML += '<a href="/' + data[1].pubkey + '">' + (displayName || name) + '(' + followerCount + ') @'+ name + '</a> <br>'
+      }
+    }
+  })
+}
+</script><br>
