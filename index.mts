@@ -548,7 +548,7 @@ function app(
   stats: any[],
   errors: [string, any][]
 ) {
-  let start = Date.now();
+  let start = performance.now();
   if (req.url?.endsWith("/")) {
     req.url = req.url.slice(0, -1);
   }
@@ -777,7 +777,7 @@ function app(
     for (let i = 0; i < stats.length; i++) {
       res.write(
         "<tr><td>" +
-          stats[i][0] +
+          stats[i][0].toFixed(1) +
           "</td><td>" +
           stats[i][1] +
           "</td><td>" +
@@ -791,9 +791,10 @@ function app(
       res.write("<br>Requests per second: " + rps.toFixed(2));
       // Max possible requests per second: time passed divided by average time per request
       let maxRps =
-        ((Date.now() - stats[0][2]) / stats.reduce((a, b) => a + b[0], 0)) *
-        stats.length;
-      res.write("<br>Max possible requests per second: " + maxRps);
+        stats.length / (stats.reduce((a, b) => a + b[0], 0) / 1000.0);
+      res.write(
+        "<br>Max possible requests per second: " + Math.round(maxRps) + "<br>"
+      );
     }
     if (errors.length > 0) {
       res.write("Errors:<br><table><tr><th>URL</th><th>Error</th></tr>");
@@ -827,7 +828,7 @@ function app(
     res.writeHead(404, {"Content-Type": "text/html"});
     res.end("not found url " + JSON.stringify(req.url));
   }
-  stats.push([Date.now() - start, req.url, Date.now()]);
+  stats.push([performance.now() - start, req.url, Date.now()]);
   if (stats.length > 1000) {
     stats.shift();
   }
