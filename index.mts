@@ -850,6 +850,9 @@ function httpServe() {
       if (errors.length > 100) {
         errors.shift();
       }
+      if (!res.writableEnded) {
+        res.end("<pre>Error serving " + original_url + ":\n" + e + "</pre>");
+      }
     }
   });
   let port = root ? 80 : 8080;
