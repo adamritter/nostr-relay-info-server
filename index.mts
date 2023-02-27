@@ -718,6 +718,29 @@ function app(
       res.writeHead(404, {"Content-Type": "application/json"});
       res.end({error: "contacts not found"});
     }
+  } else if (req.url?.endsWith("/writerelays.json")) {
+    const pubkey = req.url.slice(1, -17);
+    const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+    if (contacts) {
+      res.writeHead(200, {"Content-Type": "application/json"});
+      const contactjson = contacts[1];
+      // parse
+      const contact = JSON.parse(contactjson);
+      // parse content
+      const content = JSON.parse(contact.content);
+      // filter write relays
+      const r = [];
+      for (let [k, v] of Object.entries(content)) {
+        // @ts-ignore
+        if (v.write) {
+          r.push(k);
+        }
+      }
+      res.end(JSON.stringify(r));
+    } else {
+      res.writeHead(404, {"Content-Type": "application/json"});
+      res.end(JSON.stringify({error: "writerelays not found"}));
+    }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
     const query = req.url.slice(8, -5);
     if (query.length === 0) {
@@ -861,7 +884,11 @@ function app(
           npubEncode(pubkey) +
           "/followers'>" +
           followers.get(pubkey)?.length +
-          " followers</a><br><br>"
+          " followers (link)</a><br>"
+      );
+
+      body.push(
+        " <a href='/" + pubkey + "/followers.json'>Followers JSON</a> <br><br>"
       );
 
       if (contacts) {
@@ -886,6 +913,11 @@ function app(
             body.push("</td></tr>");
           }
           body.push("</table>");
+          body.push(
+            "<a href='/" +
+              pubkey +
+              "/writerelays.json'>Write relays JSON</a> <br>"
+          );
         } catch (e) {}
         body.push("<br><h1>Following:</h1> <br><br>");
         // horizontal breakable flex
@@ -945,6 +977,16 @@ function app(
       );
     }
     res.write(body.join(""));
+    res.end();
+    // followers.json
+  } else if (req.url?.endsWith("/followers.json")) {
+    let pubkey = req.url.split("/")[1];
+    if (pubkey.startsWith("npub")) {
+      pubkey = npubDecode(pubkey);
+    }
+    let myfollowers = followers.get(pubkey);
+    res.writeHead(200, {"Content-Type": "application/json"});
+    res.write(JSON.stringify(myfollowers));
     res.end();
   } else if (req.url === "/stats") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
