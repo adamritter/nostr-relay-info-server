@@ -615,6 +615,15 @@ function npubEncode(pubkey: string) {
     throw new Error("invalid pubkey" + pubkey + e);
   }
 }
+function npubDecode(pubkey: string): string {
+  try {
+    // @ts-ignore
+    return nip19.decode(pubkey).data;
+  } catch (e) {
+    console.error("invalid pubkey ", pubkey + " called from npubDecode");
+    throw new Error("invalid pubkey" + pubkey + e);
+  }
+}
 
 function profile(pubkey: string) {
   let body = [];
@@ -846,9 +855,13 @@ function app(
         );
       }
       body.push("<br>Hex pubkey: " + pubkey + "<br>");
-      body.push("Npub: " + nip19.npubEncode(pubkey) + "<br><br>");
+      body.push("Npub: " + npubEncode(pubkey) + "<br><br>");
       body.push(
-        "Number of followers: " + followers.get(pubkey)?.length + "<br>"
+        "<a href='/" +
+          npubEncode(pubkey) +
+          "/followers'>" +
+          followers.get(pubkey)?.length +
+          " followers</a><br>"
       );
 
       if (contacts) {
@@ -898,7 +911,6 @@ function app(
       for (let pubkey2 of followers.get(pubkey)?.slice(0, 100) || []) {
         body.push(profile(pubkey2));
       }
-      body.push("<a href='/'>Home</a> <br>");
       res.write(body.join(""));
       res.end();
     } else {
@@ -906,6 +918,24 @@ function app(
       res.write(top());
       res.end("not found");
     }
+  } else if (req.url?.endsWith("/followers")) {
+    let pubkey = req.url.split("/")[1];
+    if (pubkey.startsWith("npub")) {
+      pubkey = npubDecode(pubkey);
+    }
+    let myfollowers = followers.get(pubkey);
+    res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
+    res.write(top());
+    res.write("<h1>Followers</h1>");
+    const body = [];
+    body.push(
+      '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
+    );
+    for (let pubkey2 of myfollowers?.slice(0, 100) || []) {
+      body.push(profile(pubkey2));
+    }
+    res.write(body.join(""));
+    res.end();
   } else if (req.url === "/stats") {
     res.writeHead(200, {"Content-Type": "text/html; charset=utf-8"});
     res.write(`<head><title>Stats | rbr.bio</title></head>`);
