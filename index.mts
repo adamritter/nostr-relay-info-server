@@ -903,14 +903,14 @@ function app(
           body.push(profile(pubkey));
         }
       }
-      body.push("<br><h1>Followers:</h1> <br><br>");
-      // horizontal breakable flex
-      body.push(
-        '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
-      );
-      for (let pubkey2 of followers.get(pubkey)?.slice(0, 100) || []) {
-        body.push(profile(pubkey2));
-      }
+      // body.push("<br><h1>Followers:</h1> <br><br>");
+      // // horizontal breakable flex
+      // body.push(
+      //   '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
+      // );
+      // for (let pubkey2 of followers.get(pubkey)?.slice(0, 100) || []) {
+      //   body.push(profile(pubkey2));
+      // }
       res.write(body.join(""));
       res.end();
     } else {
