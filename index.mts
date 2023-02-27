@@ -861,7 +861,7 @@ function app(
           npubEncode(pubkey) +
           "/followers'>" +
           followers.get(pubkey)?.length +
-          " followers</a><br>"
+          " followers</a><br><br>"
       );
 
       if (contacts) {
@@ -903,14 +903,6 @@ function app(
           body.push(profile(pubkey));
         }
       }
-      // body.push("<br><h1>Followers:</h1> <br><br>");
-      // // horizontal breakable flex
-      // body.push(
-      //   '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
-      // );
-      // for (let pubkey2 of followers.get(pubkey)?.slice(0, 100) || []) {
-      //   body.push(profile(pubkey2));
-      // }
       res.write(body.join(""));
       res.end();
     } else {
@@ -918,7 +910,8 @@ function app(
       res.write(top());
       res.end("not found");
     }
-  } else if (req.url?.endsWith("/followers")) {
+  } else if (req.url?.match("followers(/([0-9]+))?$")) {
+    let page = parseInt(req.url?.match("followers(/([0-9]+))?$")[2] || "1");
     let pubkey = req.url.split("/")[1];
     if (pubkey.startsWith("npub")) {
       pubkey = npubDecode(pubkey);
@@ -931,8 +924,25 @@ function app(
     body.push(
       '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
     );
-    for (let pubkey2 of myfollowers?.slice(0, 100) || []) {
+    for (let pubkey2 of myfollowers?.slice((page - 1) * 100, page * 100) ||
+      []) {
       body.push(profile(pubkey2));
+    }
+    body.push("</span>");
+    body.push("<br>");
+    if (page > 1) {
+      body.push(
+        "<a href='/" +
+          pubkey +
+          "/followers/" +
+          (page - 1) +
+          "'>Previous page</a> "
+      );
+    }
+    if (myfollowers?.length || 0 > page * 100) {
+      body.push(
+        "<a href='/" + pubkey + "/followers/" + (page + 1) + "'>Next page</a>"
+      );
     }
     res.write(body.join(""));
     res.end();
