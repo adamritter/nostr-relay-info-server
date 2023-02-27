@@ -4,5 +4,9 @@ rbr.bio {
 	reverse_proxy localhost:8080
 }
 
+eu.rbr.bio {
+	reverse_proxy localhost:8080
+}
+
 # Refer to the Caddy docs for more information:
 # https://caddyserver.com/docs/caddyfile
