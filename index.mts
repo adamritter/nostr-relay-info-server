@@ -144,7 +144,7 @@ let lastCreatedAtAndMetadataPerPubkey = new Map<string, [number, string]>();
 let lastCreatedAtAndContactsPerPubkey = new Map<string, [number, string]>();
 const authors: [string, string, number][] = []; // [name, pubkey, followerCount]
 
-const followers = new Map<string, Set<string>>();
+const followers = new Map<string, string[]>();
 let popularFollowers: string[] = [];
 
 function computeAuthors() {
@@ -157,7 +157,7 @@ function computeAuthors() {
         authors.push([
           content.name.toLowerCase(),
           pubkey,
-          followers.get(pubkey)?.size || 0,
+          followers.get(pubkey)?.length || 0,
         ]);
       }
       if (content.display_name) {
@@ -167,7 +167,7 @@ function computeAuthors() {
           authors.push([
             content.display_name.toLowerCase(),
             pubkey,
-            followers.get(pubkey)?.size || 0,
+            followers.get(pubkey)?.length || 0,
           ]);
         }
         // look for space
@@ -176,7 +176,7 @@ function computeAuthors() {
           authors.push([
             content.display_name.substr(space + 1).toLowerCase(),
             pubkey,
-            followers.get(pubkey)?.size || 0,
+            followers.get(pubkey)?.length || 0,
           ]);
         }
       }
@@ -197,15 +197,24 @@ function computeFollowers() {
         let followed = contact[1].toLowerCase();
         let follower = followers.get(followed);
         if (follower === undefined) {
-          follower = new Set();
+          follower = [];
           followers.set(followed, follower);
         }
-        follower.add(pubkey);
+        follower.push(pubkey);
       }
     }
   }
+  for (let follower of followers.values()) {
+    // Sort by follower count
+    follower.sort((a, b) => {
+      let aCount = followers.get(a)?.length || 0;
+      let bCount = followers.get(b)?.length || 0;
+      return bCount - aCount;
+    });
+  }
+
   popularFollowers = Array.from(followers.keys()).sort(
-    (a, b) => followers.get(b)!.size - followers.get(a)!.size
+    (a, b) => followers.get(b)!.length - followers.get(a)!.length
   );
 }
 
@@ -650,7 +659,9 @@ function profile(pubkey: string) {
     body.push(`<a href='/${npubEncode(pubkey)}'>${name}</a><br><br>`);
   }
 
-  body.push(`${followers.get(pubkey)?.size || 0}  followers<br></span></span>`);
+  body.push(
+    `${followers.get(pubkey)?.length || 0}  followers<br></span></span>`
+  );
   return body.join("");
 }
 
@@ -836,7 +847,9 @@ function app(
       }
       body.push("<br>Hex pubkey: " + pubkey + "<br>");
       body.push("Npub: " + nip19.npubEncode(pubkey) + "<br><br>");
-      body.push("Number of followers: " + followers.get(pubkey)?.size + "<br>");
+      body.push(
+        "Number of followers: " + followers.get(pubkey)?.length + "<br>"
+      );
 
       if (contacts) {
         body.push(
@@ -861,7 +874,7 @@ function app(
           }
           body.push("</table>");
         } catch (e) {}
-        body.push("<br>Following: <br><br>");
+        body.push("<br><h1>Following:</h1> <br><br>");
         // horizontal breakable flex
         body.push(
           '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
@@ -870,12 +883,20 @@ function app(
           .slice()
           .sort(
             (a: string[], b: string[]) =>
-              (followers.get(b[1]?.toLocaleLowerCase())?.size || 0) -
-              (followers.get(a[1]?.toLocaleLowerCase())?.size || 0)
+              (followers.get(b[1]?.toLocaleLowerCase())?.length || 0) -
+              (followers.get(a[1]?.toLocaleLowerCase())?.length || 0)
           )) {
           let pubkey = tag[1]?.toLowerCase();
           body.push(profile(pubkey));
         }
+      }
+      body.push("<br><h1>Followers:</h1> <br><br>");
+      // horizontal breakable flex
+      body.push(
+        '<span style="display: flex;  flex-direction: column; justify-content: space-between; gap: 15px ">'
+      );
+      for (let pubkey2 of followers.get(pubkey)?.slice(0, 100) || []) {
+        body.push(profile(pubkey2));
       }
       body.push("<a href='/'>Home</a> <br>");
       res.write(body.join(""));
@@ -1013,12 +1034,12 @@ function printFollowersWithoutMetadataStatistic() {
 function getFollowedWithoutMetadata() {
   let r = [];
   for (let [k, v] of followers.entries()) {
-    if (v.size > 0 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
+    if (v.length > 0 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
       r.push(k);
     }
   }
   r.sort(
-    (a, b) => (followers.get(b)?.size || 0) - (followers.get(a)?.size || 0)
+    (a, b) => (followers.get(b)?.length || 0) - (followers.get(a)?.length || 0)
   );
   return r;
 }
