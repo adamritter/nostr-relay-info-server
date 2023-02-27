@@ -993,6 +993,18 @@ function app(
     res.write(`<head><title>Stats | rbr.bio</title></head>`);
     res.write(top());
     res.write("<h1>Stats</h1>");
+    if (stats.length > 1) {
+      let rps = stats.length / ((Date.now() - stats[0][2]) / 1000);
+      res.write("<br>Requests per second: " + rps.toFixed(2));
+      // Max possible requests per second: time passed divided by average time per request
+      let maxRps =
+        stats.length / (stats.reduce((a, b) => a + b[0], 0) / 1000.0);
+      res.write(
+        "<br>Max possible requests per second: " +
+          Math.round(maxRps) +
+          "<br><br>"
+      );
+    }
     res.write("<table><tr><th>ms</th><th>URL</th><th>Date</th></tr>");
     for (let i = 0; i < stats.length; i++) {
       res.write(
@@ -1006,16 +1018,7 @@ function app(
       );
     }
     res.write("</table>");
-    if (stats.length > 1) {
-      let rps = stats.length / ((Date.now() - stats[0][2]) / 1000);
-      res.write("<br>Requests per second: " + rps.toFixed(2));
-      // Max possible requests per second: time passed divided by average time per request
-      let maxRps =
-        stats.length / (stats.reduce((a, b) => a + b[0], 0) / 1000.0);
-      res.write(
-        "<br>Max possible requests per second: " + Math.round(maxRps) + "<br>"
-      );
-    }
+
     if (errors.length > 0) {
       res.write("Errors:<br><table><tr><th>URL</th><th>Error</th></tr>");
       for (let i = 0; i < errors.length; i++) {
