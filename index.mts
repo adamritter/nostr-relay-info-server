@@ -140,8 +140,8 @@ const lastCreatedAtAndRelayIndicesPerPubkey = new Map<
   [number, number[]]
 >();
 
-const lastCreatedAtAndMetadataPerPubkey = new Map<string, [number, string]>();
-const lastCreatedAtAndContactsPerPubkey = new Map<string, [number, string]>();
+let lastCreatedAtAndMetadataPerPubkey = new Map<string, [number, string]>();
+let lastCreatedAtAndContactsPerPubkey = new Map<string, [number, string]>();
 const authors: [string, string, number][] = []; // [name, pubkey, followerCount]
 
 const followers = new Map<string, Set<string>>();
@@ -376,8 +376,20 @@ function loadData(): boolean {
   let data, metadata, contacts;
   try {
     data = JSON.parse(fs.readFileSync("./data.json"));
-    metadata = JSON.parse(fs.readFileSync("./metadata.json"));
-    contacts = JSON.parse(fs.readFileSync("./contacts.json"));
+    lastCreatedAtAndMetadataPerPubkey = readMapFromFile("./metadata.bjson");
+    lastCreatedAtAndContactsPerPubkey = readMapFromFile("./contacts.bjson");
+    // metadata = JSON.parse(fs.readFileSync("./metadata.json"));
+    // lastCreatedAtAndMetadataPerPubkey.clear();
+    // lastCreatedAtAndContactsPerPubkey.clear();
+    // contacts = JSON.parse(fs.readFileSync("./contacts.json"));
+    // for (let [k, v] of Object.entries(metadata)) {
+    //   // @ts-ignore
+    //   lastCreatedAtAndMetadataPerPubkey.set(k, v);
+    // }
+    // for (let [k, v] of Object.entries(contacts)) {
+    //   // @ts-ignore
+    //   lastCreatedAtAndContactsPerPubkey.set(k, v);
+    // }
   } catch (err) {
     return false;
   }
@@ -387,8 +399,6 @@ function loadData(): boolean {
   allWriteRelays.length = 0;
   mainWriteRelays.length = 0;
   lastCreatedAtAndRelayIndicesPerPubkey.clear();
-  lastCreatedAtAndMetadataPerPubkey.clear();
-  lastCreatedAtAndContactsPerPubkey.clear();
   for (let [k, v] of Object.entries(data.oldestCreatedAtPerRelay)) {
     // @ts-ignore
     oldestCreatedAtPerRelay.set(k, v);
@@ -409,14 +419,7 @@ function loadData(): boolean {
     // @ts-ignore
     lastCreatedAtAndRelayIndicesPerPubkey.set(k, v);
   }
-  for (let [k, v] of Object.entries(metadata)) {
-    // @ts-ignore
-    lastCreatedAtAndMetadataPerPubkey.set(k, v);
-  }
-  for (let [k, v] of Object.entries(contacts)) {
-    // @ts-ignore
-    lastCreatedAtAndContactsPerPubkey.set(k, v);
-  }
+
   return true;
 }
 
