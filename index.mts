@@ -612,6 +612,20 @@ async function continueServe() {
     serveNew();
     return;
   }
+  if (fs.existsSync("contacts.alsoload.bjson")) {
+    console.log("Loading contacts.alsoload.bjson");
+    const contacts : Map = readMapFromFile("contacts.alsoload.bjson");
+    let i = 0, changed = 0, fresh = 0;
+    for (const [pubkey, contact] of contacts.entries()) {
+      i++;
+      const current = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+      if (!current || contact[0] > current[0]) {
+        if(current) changed++; else fresh++;
+        lastCreatedAtAndContactsPerPubkey.set(pubkey, contact);
+      }
+    }
+    console.log("updated fresh: ", fresh, ", changed: ", changed, ", loaded (all): ", i);
+  }
   let relays = await getRelays();
 
   for (let relay of relays) {
