@@ -613,6 +613,7 @@ async function continueServe() {
     return;
   }
   if (fs.existSync("contacts.alsoload.bjson")) {
+    console.log("Loading contacts.alsoload.bjson");
     const contacts = readMapFromFile("contacts.alsoload.bjson");
     for (const [pubkey, contact] of Object.entries(contacts)) {
       const current = lastCreatedAtAndContactsPerPubkey.get(pubkey);
