@@ -10,3 +10,6 @@ cp *.service /etc/systemd/system
 
 systemctl enable nostr-relay-info
 systemctl enable nostr-update-data-for-relay-info
+systemctl reload caddy
+systemctl start nostr-relay-info
+echo Pleast start nostr-update-data-for-relay-info for updating data now
