@@ -2,14 +2,14 @@ import {IncomingMessage, ServerResponse} from "http";
 import fetch from "node-fetch";
 import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
-import {nip19} from "nostr-tools";
+import {matchFilters, nip19} from "nostr-tools";
 
 const fs = require("fs");
 const v8 = require("v8");
 
 // Big file handling
 
-function writeEntry(fd, entry: any[]) {
+function writeEntry(fd: number, entry: any[]) {
   let json = JSON.stringify(entry);
   let data = Buffer.from(json, "utf8");
   let l = data.length.toString(36);
@@ -47,8 +47,8 @@ function writeBytes(fd: number, data: Buffer) {
   }
 }
 
-function readEntry(streamPos) {
-  const r: Buffer | undefined = readBytes(streamPos, 6);
+function readEntry(fd: number) {
+  const r: Buffer | undefined = readBytes(fd, 6);
   if (!r) {
     return undefined;
   }
@@ -57,13 +57,13 @@ function readEntry(streamPos) {
     return undefined;
   }
   let length: number = Number.parseInt(rs.slice(0, 5), 36);
-  const data: Buffer | undefined = readBytes(streamPos, length);
+  const data: Buffer | undefined = readBytes(fd, length);
   if (!data) {
     throw new Error("Error reading " + length + "bytes");
   }
   const datas = data.toString();
 
-  let last: string | undefined = readBytes(streamPos, 1)?.toString();
+  let last: string | undefined = readBytes(fd, 1)?.toString();
   if (last !== "\n") {
     throw new Error("Not newline at end of entry");
   }
@@ -400,8 +400,18 @@ function loadData(): boolean {
     //   lastCreatedAtAndContactsPerPubkey.set(k, v);
     // }
   } catch (err) {
+    console.error("error loading data", err);
     return false;
   }
+  console.log(
+    "loaded base data, for 1cf35cc7507b8eaf6141d35473094a224a01cdc68264124523900de0441333fe",
+    lastCreatedAtAndMetadataPerPubkey.get(
+      "1cf35cc7507b8eaf6141d35473094a224a01cdc68264124523900de0441333fe"
+    ),
+    lastCreatedAtAndContactsPerPubkey.get(
+      "1cf35cc7507b8eaf6141d35473094a224a01cdc68264124523900de0441333fe"
+    )
+  );
 
   oldestCreatedAtPerRelay.clear();
   newestCreatedAtPerRelay.clear();
@@ -436,17 +446,70 @@ import {Filter} from "nostr-tools";
 import WebSocket from "ws";
 
 const root = process.argv.includes("--root");
+const relayInfoServerHost = process.argv.includes("--relay-info-server-host")
+  ? process.argv[process.argv.indexOf("--relay-info-server-host") + 1]
+  : "localhost";
+
+const allowGlobalSubscriptions = process.argv.includes(
+  "--allow-global-subscriptions"
+);
+const allowContinuingSubscriptions = process.argv.includes(
+  "--allow-continuing-subscriptions"
+);
 
 export class RelayInfoServer {
   wss: WebSocket.Server;
   subs: Map<string, Filter[]> = new Map();
   connections: Set<WebSocket> = new Set();
   totalSubscriptions = 0;
-  constructor(server = undefined, port = root ? 81 : 8081, host = "0.0.0.0") {
+
+  #emitEventForAuthor(
+    ws: WebSocket.WebSocket,
+    sub: string,
+    author: string,
+    filter: any
+  ) {
+    if (!filter.kinds || filter.kinds.includes(10003)) {
+      const last = lastCreatedAtAndRelayIndicesPerPubkey.get(author);
+      if (last) {
+        let eventJSON = JSON.stringify([
+          "EVENT",
+          sub,
+          {
+            created_at: last[0],
+            pubkey: author,
+            content: JSON.stringify(last[1].map((i) => allWriteRelays[i])),
+            kind: 10003,
+          },
+        ]);
+        ws.send(eventJSON);
+      }
+    }
+    if (!filter.kinds || filter.kinds.includes(0)) {
+      const last = lastCreatedAtAndMetadataPerPubkey.get(author);
+      if (last) {
+        let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+        ws.send(eventJSON);
+      }
+    }
+    if (!filter.kinds || filter.kinds.includes(3)) {
+      const last = lastCreatedAtAndContactsPerPubkey.get(author);
+      if (last) {
+        let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
+        ws.send(eventJSON);
+      }
+    }
+  }
+  constructor(
+    server = undefined,
+    port = root ? 81 : 8081,
+    host = relayInfoServerHost
+  ) {
     if (server) {
       this.wss = new WebSocket.Server({server});
     } else {
       this.wss = new WebSocket.Server({port, host});
+      console.log("RelayInfoServer listening on ws://" + host + ":" + port);
     }
     this.wss.on("connection", (ws) => {
       this.connections.add(ws);
@@ -479,42 +542,31 @@ export class RelayInfoServer {
             }
             if (filter.authors && Array.isArray(filter.authors)) {
               for (const author of filter.authors) {
-                if (!filter.kinds || filter.kinds.includes(10003)) {
-                  const last =
-                    lastCreatedAtAndRelayIndicesPerPubkey.get(author);
-                  if (last) {
-                    let eventJSON = JSON.stringify([
-                      "EVENT",
-                      sub,
-                      {
-                        created_at: last[0],
-                        pubkey: author,
-                        content: JSON.stringify(
-                          last[1].map((i) => allWriteRelays[i])
-                        ),
-                        kind: 10003,
-                      },
-                    ]);
-                    ws.send(eventJSON);
-                  }
-                } else if (!filter.kinds || filter.kinds.includes(0)) {
-                  const last = lastCreatedAtAndMetadataPerPubkey.get(author);
-                  if (last) {
-                    let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-                    ws.send(eventJSON);
-                  }
-                } else if (!filter.kinds || filter.kinds.includes(3)) {
-                  const last = lastCreatedAtAndContactsPerPubkey.get(author);
-                  if (last) {
-                    let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-                    ws.send(eventJSON);
-                  }
-                }
+                this.#emitEventForAuthor(ws, sub, author, filter);
+              }
+            } else if (allowGlobalSubscriptions) {
+              const authors = new Set(
+                Array.from(lastCreatedAtAndRelayIndicesPerPubkey.keys()).concat(
+                  Array.from(lastCreatedAtAndMetadataPerPubkey.keys()).concat(
+                    Array.from(lastCreatedAtAndContactsPerPubkey.keys())
+                  )
+                )
+              );
+              for (const author of authors) {
+                this.#emitEventForAuthor(ws, sub, author, filter);
               }
             }
           }
           ws.send(JSON.stringify(["EOSE", sub]));
         } else if (data && data[0] === "EVENT") {
+          if (!allowContinuingSubscriptions) {
+            return;
+          }
+          for (let [sub, filters] of this.subs.entries()) {
+            if (matchFilters(filters, data[2])) {
+              ws.send(JSON.stringify(["EVENT", sub, data[2]]));
+            }
+          }
         } else if (data && data[0] === "CLOSE") {
           const sub = data[1];
           this.subs.delete(sub);
@@ -706,7 +758,7 @@ function app(
       res.end(metadata[1]);
     } else {
       res.writeHead(404, {"Content-Type": "application/json"});
-      res.end({error: "metadata not found"});
+      res.end(JSON.stringify({error: "metadata not found"}));
     }
   } else if (req.url?.endsWith("/contacts.json")) {
     const pubkey = req.url.slice(1, -14);
@@ -716,7 +768,7 @@ function app(
       res.end(contacts[1]);
     } else {
       res.writeHead(404, {"Content-Type": "application/json"});
-      res.end({error: "contacts not found"});
+      res.end(JSON.stringify({error: "contacts not found"}));
     }
   } else if (req.url?.endsWith("/writerelays.json")) {
     const pubkey = req.url.slice(1, -17);
@@ -742,7 +794,7 @@ function app(
       res.end(JSON.stringify({error: "writerelays not found"}));
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
-    const query = req.url.slice(8, -5);
+    const query = decodeURIComponent(req.url.slice(8, -5));
     if (query.length === 0) {
       res.writeHead(200, {"Content-Type": "application/json"});
       res.end("[]");
