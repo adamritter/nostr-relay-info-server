@@ -457,6 +457,33 @@ const allowContinuingSubscriptions = process.argv.includes(
   "--allow-continuing-subscriptions"
 );
 
+function writeRelays(pubkey) {
+  const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+  try {
+    if (contacts) {
+      const contactjson = contacts[1];
+      const contact = JSON.parse(contactjson);
+      const content = JSON.parse(contact.content);
+      const r = [];
+      for (let [k, v] of Object.entries(content)) {
+        // @ts-ignore
+        if (v.write) {
+          r.push(k);
+        }
+      }
+      return r;
+    }
+  } catch (err) {
+    throw new Error(
+      "error parsing contacts for " +
+        pubkey +
+        ": " +
+        contacts?.[1] +
+        JSON.stringify(err)
+    );
+  }
+}
+
 export class RelayInfoServer {
   wss: WebSocket.Server;
   subs: Map<string, Filter[]> = new Map();
@@ -784,21 +811,8 @@ function app(
     const pubkey = req.url.slice(1, -17);
     const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
     if (contacts) {
-      res.writeHead(200, {"Content-Type": "application/json"});
-      const contactjson = contacts[1];
-      // parse
-      const contact = JSON.parse(contactjson);
-      // parse content
-      const content = JSON.parse(contact.content);
-      // filter write relays
-      const r = [];
-      for (let [k, v] of Object.entries(content)) {
-        // @ts-ignore
-        if (v.write) {
-          r.push(k);
-        }
-      }
-      res.end(JSON.stringify(r));
+      res.writeHead(200, {"Content-Type": "application/json; charset=utf-8"});
+      res.end(JSON.stringify(writeRelays(pubkey)));
     } else {
       res.writeHead(404, {"Content-Type": "application/json"});
       res.end(JSON.stringify({error: "writerelays not found"}));
@@ -953,6 +967,10 @@ function app(
         " <a href='/" + pubkey + "/followers.json'>Followers JSON</a> <br><br>"
       );
 
+      body.push(
+        " <br><a href='/" + pubkey + "/info.json'>Info JSON</a> <br><br>"
+      );
+
       if (contacts) {
         body.push(
           "<a href='/" + pubkey + "/contacts.json'>Contacts JSON</a> <br>"
@@ -998,6 +1016,49 @@ function app(
         }
       }
       res.write(body.join(""));
+      res.end();
+    } else {
+      res.writeHead(404, {"Content-Type": "text/html"});
+      res.write(top());
+      res.end("not found");
+    }
+  } else if (req.url?.endsWith("/info.json")) {
+    // Return metadata and contacts for a user, and metadata and write relays for its contacts
+    const pubkey = req.url.slice(1, -10);
+    const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+    const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+    let md = metadata && JSON.parse(metadata[1]);
+
+    if (metadata || contacts) {
+      // json content with utf-8i
+      res.writeHead(200, {"Content-Type": "application/json; charset=utf-8"});
+      let r = {metadata, contacts};
+      // @ts-ignore
+      r.followerCount = followers.get(pubkey)?.length;
+      if (contacts) {
+        // @ts-ignore
+        r.following = [];
+        let md = JSON.parse(contacts[1]);
+        for (let tag of md.tags
+          .slice()
+          .sort(
+            (a: string[], b: string[]) =>
+              (followers.get(b[1]?.toLocaleLowerCase())?.length || 0) -
+              (followers.get(a[1]?.toLocaleLowerCase())?.length || 0)
+          )) {
+          let pubkey = tag[1]?.toLowerCase();
+          let rr = {};
+          try {
+            rr.metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+          } catch (e) {}
+          try {
+            rr.writeRelays = writeRelays(pubkey);
+          } catch (e) {}
+          // @ts-ignore
+          r.following.push(rr);
+        }
+      }
+      res.write(JSON.stringify(r));
       res.end();
     } else {
       res.writeHead(404, {"Content-Type": "text/html"});
