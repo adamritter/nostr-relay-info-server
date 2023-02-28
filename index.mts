@@ -612,6 +612,15 @@ async function continueServe() {
     serveNew();
     return;
   }
+  if (fs.existSync("contacts.alsoload.bjson")) {
+    const contacts = readMapFromFile("contacts.alsoload.bjson");
+    for (const [pubkey, contact] of Object.entries(contacts)) {
+      const current = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+      if (!current || contact[0] > current[0]) {
+        lastCreatedAtAndContactsPerPubkey.set(pubkey, contact);
+      }
+    }
+  }
   let relays = await getRelays();
 
   for (let relay of relays) {
