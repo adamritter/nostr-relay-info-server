@@ -445,6 +445,13 @@ function loadData(): boolean {
 import {Filter} from "nostr-tools";
 import WebSocket from "ws";
 
+function writeJSONHeader(res: ServerResponse, errorCode: number) {
+  res.writeHead(errorCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+  });
+}
+
 const root = process.argv.includes("--root");
 const relayInfoServerHost = process.argv.includes("--relay-info-server-host")
   ? process.argv[process.argv.indexOf("--relay-info-server-host") + 1]
@@ -809,36 +816,36 @@ function app(
     const pubkey = req.url.slice(1, -14);
     const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
     if (metadata) {
-      res.writeHead(200, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 200);
       res.end(metadata[1]);
     } else {
-      res.writeHead(404, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 404);
       res.end(JSON.stringify({error: "metadata not found"}));
     }
   } else if (req.url?.endsWith("/contacts.json")) {
     const pubkey = req.url.slice(1, -14);
     const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
     if (contacts) {
-      res.writeHead(200, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 200);
       res.end(contacts[1]);
     } else {
-      res.writeHead(404, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 404);
       res.end(JSON.stringify({error: "contacts not found"}));
     }
   } else if (req.url?.endsWith("/writerelays.json")) {
     const pubkey = req.url.slice(1, -17);
     const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
     if (contacts) {
-      res.writeHead(200, {"Content-Type": "application/json; charset=utf-8"});
+      writeJSONHeader(res, 200);
       res.end(JSON.stringify(writeRelays(pubkey)));
     } else {
-      res.writeHead(404, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 404);
       res.end(JSON.stringify({error: "writerelays not found"}));
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
     const query = decodeURIComponent(req.url.slice(8, -5));
     if (query.length === 0) {
-      res.writeHead(200, {"Content-Type": "application/json"});
+      writeJSONHeader(res, 200);
       res.end("[]");
     } else {
       // binary search in authors array first and last index that starts with query
@@ -856,14 +863,14 @@ function app(
         middle = Math.floor((first + last) / 2);
       }
       if (first > last) {
-        res.writeHead(200, {"Content-Type": "application/json"});
+        writeJSONHeader(res, 200);
         res.end("[]");
       } else {
         let firstIndex = middle;
         while (firstIndex > 0 && authors[firstIndex - 1][0].startsWith(query)) {
           firstIndex--;
         }
-        res.writeHead(200, {"Content-Type": "application/json"});
+        writeJSONHeader(res, 200);
         let r: any[] = [];
         let lowest = 0;
         while (authors[firstIndex][0]?.startsWith(query)) {
@@ -1048,7 +1055,7 @@ function app(
 
     if (metadataJSON || contactsJSON) {
       // json content with utf-8i
-      res.writeHead(200, {"Content-Type": "application/json; charset=utf-8"});
+      writeJSONHeader(res, 200);
       let contacts, metadata;
       try {
         contacts = JSON.parse(contactsJSON);
@@ -1085,6 +1092,9 @@ function app(
                 name: content.name,
                 display_name: content.display_name,
                 picture: content.picture,
+                about: content.about,
+                nip05: content.nip05,
+                followerCount: followers.get(pubkey)?.length,
               };
             }
           } catch (e) {}
@@ -1146,7 +1156,8 @@ function app(
       pubkey = npubDecode(pubkey);
     }
     let myfollowers = followers.get(pubkey);
-    res.writeHead(200, {"Content-Type": "application/json"});
+    writeJSONHeader(res, 200);
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.write(JSON.stringify(myfollowers));
     res.end();
   } else if (req.url === "/stats") {
