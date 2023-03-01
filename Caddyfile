@@ -1,14 +1,17 @@
 # The Caddyfile is an easy way to configure your Caddy web server.
 
 rbr.bio {
+	encode zstd gzip
 	reverse_proxy localhost:8080
 }
 
 eu.rbr.bio {
+	encode zstd gzip
 	reverse_proxy localhost:8080
 }
 
 us.rbr.bio {
+	encode zstd gzip
 	reverse_proxy localhost:8080
 }
 
