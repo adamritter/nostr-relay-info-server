@@ -1070,11 +1070,12 @@ function app(
               lastCreatedAtAndMetadataPerPubkey.get(pubkey)?.[1];
             if (metadataJSON) {
               const metadata = JSON.parse(metadataJSON);
+              const content = JSON.parse(metadata.content);
               // @ts-ignore
               rr.metadata = {
-                name: metadata.name,
-                display_name: metadata.display_name,
-                picture: metadata.picture,
+                name: content.name,
+                display_name: content.display_name,
+                picture: content.picture,
               };
             }
           } catch (e) {}
