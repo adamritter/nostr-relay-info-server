@@ -1157,7 +1157,6 @@ function app(
     }
     let myfollowers = followers.get(pubkey);
     writeJSONHeader(res, 200);
-    res.setHeader("Access-Control-Allow-Origin", "*");
     res.write(JSON.stringify(myfollowers));
     res.end();
   } else if (req.url === "/stats") {
