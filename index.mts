@@ -1043,20 +1043,29 @@ function app(
   } else if (req.url?.endsWith("/info.json")) {
     // Return metadata and contacts for a user, and metadata and write relays for its contacts
     const pubkey = req.url.slice(1, -10);
-    const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-    const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+    const metadataJSON = lastCreatedAtAndMetadataPerPubkey.get(pubkey)?.[1];
+    const contactsJSON = lastCreatedAtAndContactsPerPubkey.get(pubkey)?.[1];
 
-    if (metadata || contacts) {
+    if (metadataJSON || contactsJSON) {
       // json content with utf-8i
       res.writeHead(200, {"Content-Type": "application/json; charset=utf-8"});
-      let r = {metadata, contacts};
+      let contacts, metadata;
+      try {
+        contacts = JSON.parse(contactsJSON);
+      } catch (e) {}
+      try {
+        metadata = JSON.parse(metadataJSON);
+      } catch (e) {}
+      let r = {
+        metadata,
+        contacts,
+      };
       // @ts-ignore
       r.followerCount = followers.get(pubkey)?.length;
       if (contacts) {
         // @ts-ignore
         r.following = [];
-        let md = JSON.parse(contacts[1]);
-        for (let tag of md.tags
+        for (let tag of contacts.tags
           .slice()
           .sort(
             (a: string[], b: string[]) =>
