@@ -457,21 +457,25 @@ const allowContinuingSubscriptions = process.argv.includes(
   "--allow-continuing-subscriptions"
 );
 
-function writeRelays(pubkey) {
+function getWriteRelaysFromContactList(event: {content: string}) {
+  const content = JSON.parse(event.content);
+  const r = [];
+  for (let [k, v] of Object.entries(content)) {
+    // @ts-ignore
+    if (v.write) {
+      r.push(k);
+    }
+  }
+  return r;
+}
+
+function writeRelays(pubkey: string) {
   const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
   try {
     if (contacts) {
       const contactjson = contacts[1];
-      const contact = JSON.parse(contactjson);
-      const content = JSON.parse(contact.content);
-      const r = [];
-      for (let [k, v] of Object.entries(content)) {
-        // @ts-ignore
-        if (v.write) {
-          r.push(k);
-        }
-      }
-      return r;
+      const contactList = JSON.parse(contactjson);
+      return getWriteRelaysFromContactList(contactList);
     }
   } catch (err) {
     throw new Error(
@@ -641,17 +645,27 @@ async function continueServe() {
   }
   if (fs.existsSync("contacts.alsoload.bjson")) {
     console.log("Loading contacts.alsoload.bjson");
-    const contacts : Map = readMapFromFile("contacts.alsoload.bjson");
-    let i = 0, changed = 0, fresh = 0;
+    const contacts: Map = readMapFromFile("contacts.alsoload.bjson");
+    let i = 0,
+      changed = 0,
+      fresh = 0;
     for (const [pubkey, contact] of contacts.entries()) {
       i++;
       const current = lastCreatedAtAndContactsPerPubkey.get(pubkey);
       if (!current || contact[0] > current[0]) {
-        if(current) changed++; else fresh++;
+        if (current) changed++;
+        else fresh++;
         lastCreatedAtAndContactsPerPubkey.set(pubkey, contact);
       }
     }
-    console.log("updated fresh: ", fresh, ", changed: ", changed, ", loaded (all): ", i);
+    console.log(
+      "updated fresh: ",
+      fresh,
+      ", changed: ",
+      changed,
+      ", loaded (all): ",
+      i
+    );
   }
   let relays = await getRelays();
 
@@ -1031,7 +1045,6 @@ function app(
     const pubkey = req.url.slice(1, -10);
     const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
     const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
-    let md = metadata && JSON.parse(metadata[1]);
 
     if (metadata || contacts) {
       // json content with utf-8i
@@ -1053,9 +1066,20 @@ function app(
           let pubkey = tag[1]?.toLowerCase();
           let rr = {};
           try {
-            rr.metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+            const metadataJSON =
+              lastCreatedAtAndMetadataPerPubkey.get(pubkey)?.[1];
+            if (metadataJSON) {
+              const metadata = JSON.parse(metadataJSON);
+              // @ts-ignore
+              rr.metadata = {
+                name: metadata.name,
+                display_name: metadata.display_name,
+                picture: metadata.picture,
+              };
+            }
           } catch (e) {}
           try {
+            // @ts-ignore
             rr.writeRelays = writeRelays(pubkey);
           } catch (e) {}
           // @ts-ignore
