@@ -1080,7 +1080,7 @@ function app(
               (followers.get(a[1]?.toLocaleLowerCase())?.length || 0)
           )) {
           let pubkey = tag[1]?.toLowerCase();
-          let rr = {};
+          let rr = {pubkey};
           try {
             const metadataJSON =
               lastCreatedAtAndMetadataPerPubkey.get(pubkey)?.[1];
