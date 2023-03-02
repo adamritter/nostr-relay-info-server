@@ -465,7 +465,18 @@ const allowContinuingSubscriptions = process.argv.includes(
 );
 
 function getWriteRelaysFromContactList(event: {content: string}) {
-  const content = JSON.parse(event.content);
+  let content;
+  try {
+    content = JSON.parse(event.content);
+  } catch (err) {
+    throw new Error(
+      "error parsing content for pubkey " +
+        event.pubkey +
+        ": " +
+        event.content +
+        JSON.stringify(err)
+    );
+  }
   const r = [];
   for (let [k, v] of Object.entries(content)) {
     // @ts-ignore
@@ -478,11 +489,11 @@ function getWriteRelaysFromContactList(event: {content: string}) {
 
 function writeRelays(pubkey: string) {
   const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
+  let contactList;
   try {
     if (contacts) {
       const contactjson = contacts[1];
-      const contactList = JSON.parse(contactjson);
-      return getWriteRelaysFromContactList(contactList);
+      contactList = JSON.parse(contactjson);
     }
   } catch (err) {
     throw new Error(
@@ -493,6 +504,7 @@ function writeRelays(pubkey: string) {
         JSON.stringify(err)
     );
   }
+  return getWriteRelaysFromContactList(contactList);
 }
 
 export class RelayInfoServer {
@@ -835,12 +847,22 @@ function app(
   } else if (req.url?.endsWith("/writerelays.json")) {
     const pubkey = req.url.slice(1, -17);
     const contacts = lastCreatedAtAndContactsPerPubkey.get(pubkey);
-    if (contacts) {
-      writeJSONHeader(res, 200);
-      res.end(JSON.stringify(writeRelays(pubkey)));
-    } else {
+    try {
+      const relays = writeRelays(pubkey);
+      if (contacts) {
+        writeJSONHeader(res, 200);
+        res.end(JSON.stringify(relays));
+      } else {
+        writeJSONHeader(res, 404);
+        res.end(JSON.stringify({error: "writerelays not found"}));
+      }
+    } catch (e) {
       writeJSONHeader(res, 404);
-      res.end(JSON.stringify({error: "writerelays not found"}));
+      res.end(
+        JSON.stringify({
+          error: "error parsing write relays " + e,
+        })
+      );
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
     const query = decodeURIComponent(req.url.slice(8, -5));
