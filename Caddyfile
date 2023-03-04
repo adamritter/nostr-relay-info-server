@@ -2,6 +2,18 @@
 
 rbr.bio {
 	encode zstd gzip
+	@sveltekit {
+		path_regexp npub([a-z0-9]{59})$
+
+	}
+	reverse_proxy @sveltekit localhost:4173
+
+	@sveltekit2 {
+		path_regexp app
+
+	}
+	reverse_proxy @sveltekit2 localhost:4173
+
 	reverse_proxy localhost:8080
 }
 
