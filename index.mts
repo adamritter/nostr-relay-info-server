@@ -915,7 +915,7 @@ function app(
           const a = r[i];
           const md = lastCreatedAtAndMetadataPerPubkey.get(a[1]);
           if (md) {
-            r2.push([a[2], JSON.parse(md[1])]);
+            r2.push([a[2], JSON.parse(md[1]), npubEncode(a[1])]);
           }
         }
         res.end(JSON.stringify(r2));

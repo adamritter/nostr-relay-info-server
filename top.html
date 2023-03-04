@@ -32,7 +32,7 @@ function search(q) {
           let content = JSON.parse(metaData.content)
           let name = content.name
           let displayName = content.display_name
-          el.innerHTML += '<a href="/' + data[1].pubkey + '">' + (displayName || name) + '(' + followerCount + ') @'+ name + '</a> <br>'
+          el.innerHTML += '<a href="/' + data[2] + '">' + (displayName || name) + '(' + followerCount + ') @'+ name + '</a> <br>'
         }
       }
     })
