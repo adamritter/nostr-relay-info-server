@@ -242,11 +242,29 @@ function saveData() {
   //   JSON.stringify(Object.fromEntries(lastCreatedAtAndContactsPerPubkey))
   // );
   writeMapToFile("./contacts.bjson.new", lastCreatedAtAndContactsPerPubkey);
-  fs.renameSync("./data.json.new", "./data.json");
-  fs.renameSync("./metadata.bjson.new", "./metadata.bjson");
-  fs.renameSync("./contacts.bjson.new", "./contacts.bjson");
+  renameIfNotSmallerSync("./data.json.new", "./data.json");
+  renameIfNotSmallerSync("./metadata.bjson.new", "./metadata.bjson");
+  renameIfNotSmallerSync("./contacts.bjson.new", "./contacts.bjson");
   console.log("saved data in ", Math.round((Date.now() - time) / 1000), "s");
 }
+function renameIfNotSmallerSync(from: string, to: string) {
+  const fs = require("fs");
+  if (!fs.existsSync(to)) {
+    fs.renameSync(from, to);
+    return;
+  }
+  if (!fs.existsSync(from)) {
+    throw new Error("from does not exist " + from);
+  }
+  let fromSize = fs.statSync(from).size;
+  let toSize = fs.statSync(to).size;
+  if (fromSize >= toSize) {
+    fs.renameSync(from, to);
+  } else {
+    throw new Error("new file is smaller " + from + " " + to);
+  }
+}
+
 function onevent(event: Event, afterEose: boolean, url: string | undefined) {
   if (event.kind === 3) {
     oncontact(event, afterEose, url);
