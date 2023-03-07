@@ -12,6 +12,48 @@ rbr.bio {
 		path_regexp app
 
 	}
+	reverse_proxy @sveltekit2 localhost:4173 eu.rbr.bio:2000 {
+             lb_policy first
+             lb_retries 1
+        }
+
+	reverse_proxy localhost:8080 eu.rbr.bio:2000 {
+             lb_policy first
+             lb_retries 1
+        }
+
+}
+
+# SSL port without retries
+us.rbr.bio:2000 {
+	encode zstd gzip
+	@sveltekit {
+		path_regexp npub([a-z0-9]{59})$
+
+	}
+	reverse_proxy @sveltekit localhost:4173
+
+	@sveltekit2 {
+		path_regexp app
+
+	}
+	reverse_proxy @sveltekit2 localhost:4173
+
+	reverse_proxy localhost:8080
+}
+
+eu.rbr.bio:2000 {
+	encode zstd gzip
+	@sveltekit {
+		path_regexp npub([a-z0-9]{59})$
+
+	}
+	reverse_proxy @sveltekit localhost:4173
+
+	@sveltekit2 {
+		path_regexp app
+
+	}
 	reverse_proxy @sveltekit2 localhost:4173
 
 	reverse_proxy localhost:8080
