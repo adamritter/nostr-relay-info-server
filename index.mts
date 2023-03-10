@@ -574,9 +574,9 @@ export class RelayInfoServer {
     host = relayInfoServerHost
   ) {
     if (server) {
-      this.wss = new WebSocket.Server({server});
+      this.wss = new WebSocket.Server({server, perMessageDeflate: true});
     } else {
-      this.wss = new WebSocket.Server({port, host});
+      this.wss = new WebSocket.Server({port, host, perMessageDeflate: true});
       console.log("RelayInfoServer listening on ws://" + host + ":" + port);
     }
     this.wss.on("connection", (ws) => {
