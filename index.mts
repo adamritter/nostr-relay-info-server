@@ -1,3 +1,18 @@
+// Speed testing in web browser:
+// w=new WebSocket("wss://rbr.bio"); w.onopen=()=>console.log("opened"); w.onmessage=(x)=>console.log("message", x)
+// z=0;all=1000;time=Date.now();w.onmessage=(x)=>{if(JSON.parse(x.data)[0]=="EVENT") z++; if(z==all) console.log("time",Date.now()-time) }; for(i=0;i<all;i++) w.send('["REQ","1",{"authors":["82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2"],"kinds":[0]}]')
+// 2500ms
+// let u="https://rbr.bio/82341f882b6eabcd2ba7f1ef90aad961cf074af15b9ef44a09f9d2a8fbfbe6a2/metadata.json"
+// time=Date.now(); a=[];for(i=0; i<1000; i++) a.push(fetch(u)); for(i=0; i<a.length; i++) await a[i]; console.log(Date.now()-time)
+// 21035ms
+// I guess the websocket is 10x faster than the http request
+// time=Date.now();for(i=0; i<1000; i++) JSON.parse(data);Date.now()-time
+// 2ms
+// 3200ms with contacts as well??? strange
+// TODO:
+// ["COUNT", "", {kinds: [3], '#p': [<pubkey>]}]
+// ["COUNT", "", {count: 238}]
+
 import {IncomingMessage, ServerResponse} from "http";
 import fetch from "node-fetch";
 import {RelayPool} from "nostr-relaypool";
@@ -590,54 +605,75 @@ export class RelayInfoServer {
             JSON.stringify(["NOTICE", "invalid json:", message.toString()])
           );
         }
-
-        if (data && data[0] === "REQ") {
-          const sub = data[1];
-          const filters = data.slice(2);
-          this.totalSubscriptions++;
-          this.subs.set(sub, filters);
-          for (const filter of filters) {
-            if (filter.kinds && !Array.isArray(filter.kinds)) {
-              continue;
-            }
-            if (
-              filter.kinds &&
-              !filter.kinds.includes(10003) &&
-              !filter.kinds.includes(0) &&
-              !filter.kinds.includes(3)
-            ) {
-              continue;
-            }
-            if (filter.authors && Array.isArray(filter.authors)) {
-              for (const author of filter.authors) {
-                this.#emitEventForAuthor(ws, sub, author, filter);
+        try {
+          if (data && data[0] === "REQ") {
+            const sub = data[1];
+            const filters = data.slice(2);
+            this.totalSubscriptions++;
+            this.subs.set(sub, filters);
+            for (const filter of filters) {
+              if (filter.kinds && !Array.isArray(filter.kinds)) {
+                continue;
               }
-            } else if (allowGlobalSubscriptions) {
-              const authors = new Set(
-                Array.from(lastCreatedAtAndRelayIndicesPerPubkey.keys()).concat(
-                  Array.from(lastCreatedAtAndMetadataPerPubkey.keys()).concat(
-                    Array.from(lastCreatedAtAndContactsPerPubkey.keys())
+              if (
+                filter.kinds &&
+                !filter.kinds.includes(10003) &&
+                !filter.kinds.includes(0) &&
+                !filter.kinds.includes(3)
+              ) {
+                continue;
+              }
+              if (filter.authors && Array.isArray(filter.authors)) {
+                for (const author of filter.authors) {
+                  this.#emitEventForAuthor(ws, sub, author, filter);
+                }
+              } else if (allowGlobalSubscriptions) {
+                const authors = new Set(
+                  Array.from(
+                    lastCreatedAtAndRelayIndicesPerPubkey.keys()
+                  ).concat(
+                    Array.from(lastCreatedAtAndMetadataPerPubkey.keys()).concat(
+                      Array.from(lastCreatedAtAndContactsPerPubkey.keys())
+                    )
                   )
-                )
-              );
-              for (const author of authors) {
-                this.#emitEventForAuthor(ws, sub, author, filter);
+                );
+                for (const author of authors) {
+                  this.#emitEventForAuthor(ws, sub, author, filter);
+                }
               }
             }
-          }
-          ws.send(JSON.stringify(["EOSE", sub]));
-        } else if (data && data[0] === "EVENT") {
-          if (!allowContinuingSubscriptions) {
-            return;
-          }
-          for (let [sub, filters] of this.subs.entries()) {
-            if (matchFilters(filters, data[2])) {
-              ws.send(JSON.stringify(["EVENT", sub, data[2]]));
+            ws.send(JSON.stringify(["EOSE", sub]));
+          } else if (data && data[0] === "EVENT") {
+            if (!allowContinuingSubscriptions) {
+              return;
+            }
+            for (let [sub, filters] of this.subs.entries()) {
+              if (matchFilters(filters, data[2])) {
+                ws.send(JSON.stringify(["EVENT", sub, data[2]]));
+              }
+            }
+          } else if (data && data[0] === "CLOSE") {
+            const sub = data[1];
+            this.subs.delete(sub);
+          } else if (data && data[0] === "COUNT") {
+            const sub = data[1];
+            const filter = data[2];
+            if (
+              filter &&
+              Array.isArray(filter.kinds) &&
+              filter.kinds.length === 1 &&
+              filter.kinds[0] === 3 &&
+              filter["#p"]
+            ) {
+              let count = 0;
+              for (const pubkey of filter["#p"]) {
+                count += followers.get(pubkey)?.length || 0;
+              }
+              ws.send(JSON.stringify(["COUNT", sub, {count}]));
             }
           }
-        } else if (data && data[0] === "CLOSE") {
-          const sub = data[1];
-          this.subs.delete(sub);
+        } catch (e) {
+          ws.send(JSON.stringify(["NOTICE", "error: " + e]));
         }
       });
     });
