@@ -571,15 +571,21 @@ export class RelayInfoServer {
     if (!filter.kinds || filter.kinds.includes(0)) {
       const last = lastCreatedAtAndMetadataPerPubkey.get(author);
       if (last) {
-        let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-        ws.send(eventJSON);
+        try {
+          const event = JSON.parse(last[1]);
+          let eventJSON = JSON.stringify(["EVENT", sub, event]);
+          ws.send(eventJSON);
+        } catch (err) {}
       }
     }
     if (!filter.kinds || filter.kinds.includes(3)) {
       const last = lastCreatedAtAndContactsPerPubkey.get(author);
       if (last) {
-        let eventJSON = JSON.stringify(["EVENT", sub, last[1]]);
-        ws.send(eventJSON);
+        try {
+          const event = JSON.parse(last[1]);
+          let eventJSON = JSON.stringify(["EVENT", sub, event]);
+          ws.send(eventJSON);
+        } catch (err) {}
       }
     }
   }
