@@ -603,6 +603,7 @@ export class RelayInfoServer {
     this.wss.on("connection", (ws) => {
       this.connections.add(ws);
       ws.on("message", (message) => {
+        const start = performance.now();
         let data;
         try {
           data = JSON.parse(message.toString());
@@ -622,29 +623,65 @@ export class RelayInfoServer {
                 continue;
               }
               if (
-                filter.kinds &&
-                !filter.kinds.includes(10003) &&
-                !filter.kinds.includes(0) &&
-                !filter.kinds.includes(3)
+                Array.isArray(filter["#p"]) &&
+                (!filter.kinds || filter.kinds.includes(3))
               ) {
-                continue;
-              }
-              if (filter.authors && Array.isArray(filter.authors)) {
-                for (const author of filter.authors) {
-                  this.#emitEventForAuthor(ws, sub, author, filter);
+                let limit = 200;
+                if (filter.limit && filter.limit < 200) {
+                  limit = filter.limit;
                 }
-              } else if (allowGlobalSubscriptions) {
-                const authors = new Set(
-                  Array.from(
-                    lastCreatedAtAndRelayIndicesPerPubkey.keys()
-                  ).concat(
-                    Array.from(lastCreatedAtAndMetadataPerPubkey.keys()).concat(
-                      Array.from(lastCreatedAtAndContactsPerPubkey.keys())
+                let count = 0;
+                for (const author of filter["#p"]) {
+                  for (const follower of followers.get(author) || []) {
+                    if (count >= limit) {
+                      break;
+                    }
+                    const contactList =
+                      lastCreatedAtAndContactsPerPubkey.get(follower);
+                    if (contactList && contactList[1]) {
+                      try {
+                        // const contacts = JSON.parse(contactList[1]);
+                        // ws.send(JSON.stringify(["EVENT", sub, contacts]));
+                        ws.send(
+                          '["EVENT",' +
+                            JSON.stringify(sub) +
+                            "," +
+                            contactList[1] +
+                            "]"
+                        );
+                        count++;
+                      } catch (err) {}
+                    }
+                  }
+                }
+              } else {
+                if (
+                  filter.kinds &&
+                  !filter.kinds.includes(10003) &&
+                  !filter.kinds.includes(0) &&
+                  !filter.kinds.includes(3)
+                ) {
+                  continue;
+                }
+                if (filter.authors && Array.isArray(filter.authors)) {
+                  for (const author of filter.authors) {
+                    this.#emitEventForAuthor(ws, sub, author, filter);
+                  }
+                } else if (allowGlobalSubscriptions) {
+                  const authors = new Set(
+                    Array.from(
+                      lastCreatedAtAndRelayIndicesPerPubkey.keys()
+                    ).concat(
+                      Array.from(
+                        lastCreatedAtAndMetadataPerPubkey.keys()
+                      ).concat(
+                        Array.from(lastCreatedAtAndContactsPerPubkey.keys())
+                      )
                     )
-                  )
-                );
-                for (const author of authors) {
-                  this.#emitEventForAuthor(ws, sub, author, filter);
+                  );
+                  for (const author of authors) {
+                    this.#emitEventForAuthor(ws, sub, author, filter);
+                  }
                 }
               }
             }
@@ -721,8 +758,20 @@ export class RelayInfoServer {
             }
             ws.send(JSON.stringify(["COUNT", sub, ...counts]));
           }
+          stats.push([
+            performance.now() - start,
+            JSON.stringify(data),
+            Date.now(),
+          ]);
+          if (stats.length > 1000) {
+            stats.shift();
+          }
         } catch (e) {
           ws.send(JSON.stringify(["NOTICE", "error: " + e]));
+          errors.push([JSON.stringify(data), e]);
+          if (errors.length > 100) {
+            errors.shift();
+          }
         }
       });
     });
@@ -1362,10 +1411,10 @@ function app(
 }
 
 import {createServer} from "http";
+let stats: any[] = [];
+let errors: any[] = [];
 
 function httpServe() {
-  let stats: any[] = [];
-  let errors: any[] = [];
   let server = createServer(function (req, res) {
     const original_url = req.url;
     try {
