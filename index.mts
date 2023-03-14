@@ -673,11 +673,48 @@ export class RelayInfoServer {
                 filter.kinds[0] === 3 &&
                 filter["#p"]
               ) {
-                let count = 0;
-                for (const pubkey of filter["#p"]) {
-                  count += followers.get(pubkey)?.length || 0;
+                if (
+                  Array.isArray(filter.group_by) &&
+                  filter.group_by.length === 1 &&
+                  filter.group_by[0] === "pubkey"
+                ) {
+                  if (filter["#p"].length === 1) {
+                    const fs =
+                      followers.get(filter["#p"][0])?.slice(0, 5000) || [];
+                    counts.push(fs.map((f) => ({pubkey: f, count: 1})));
+                  } else {
+                    const byPubKey = new Map();
+                    for (const pubkey of filter["#p"]) {
+                      for (const follower of followers.get(pubkey) || []) {
+                        byPubKey.set(
+                          follower,
+                          (byPubKey.get(follower) || 0) + 1
+                        );
+                      }
+                    }
+                    const r = [];
+                    for (const [pubkey, count] of byPubKey.entries()) {
+                      r.push({
+                        pubkey,
+                        count,
+                        f: followers.get(pubkey)?.length || 0,
+                      });
+                    }
+                    r.sort((a, b) => b.f - a.f);
+                    for (const e of r) {
+                      e.f = undefined;
+                    }
+                    counts.push(r);
+                  }
+                } else if (!filter.group_by) {
+                  let count = 0;
+                  for (const pubkey of filter["#p"]) {
+                    count += followers.get(pubkey)?.length || 0;
+                  }
+                  counts.push({count});
+                } else {
+                  counts.push(null);
                 }
-                counts.push({count});
               } else {
                 counts.push(null);
               }
