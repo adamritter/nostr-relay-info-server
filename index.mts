@@ -680,7 +680,7 @@ export class RelayInfoServer {
                 ) {
                   if (filter["#p"].length === 1) {
                     const fs =
-                      followers.get(filter["#p"][0])?.slice(0, 5000) || [];
+                      followers.get(filter["#p"][0])?.slice(0, 1000) || [];
                     counts.push(fs.map((f) => ({pubkey: f, count: 1})));
                   } else {
                     const byPubKey = new Map();
