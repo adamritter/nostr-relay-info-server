@@ -663,20 +663,26 @@ export class RelayInfoServer {
             this.subs.delete(sub);
           } else if (data && data[0] === "COUNT") {
             const sub = data[1];
-            const filter = data[2];
-            if (
-              filter &&
-              Array.isArray(filter.kinds) &&
-              filter.kinds.length === 1 &&
-              filter.kinds[0] === 3 &&
-              filter["#p"]
-            ) {
-              let count = 0;
-              for (const pubkey of filter["#p"]) {
-                count += followers.get(pubkey)?.length || 0;
+            const filters = data.slice(2);
+            const counts = [];
+            for (const filter of filters) {
+              if (
+                filter &&
+                Array.isArray(filter.kinds) &&
+                filter.kinds.length === 1 &&
+                filter.kinds[0] === 3 &&
+                filter["#p"]
+              ) {
+                let count = 0;
+                for (const pubkey of filter["#p"]) {
+                  count += followers.get(pubkey)?.length || 0;
+                }
+                counts.push({count});
+              } else {
+                counts.push(null);
               }
-              ws.send(JSON.stringify(["COUNT", sub, {count}]));
             }
+            ws.send(JSON.stringify(["COUNT", sub, ...counts]));
           }
         } catch (e) {
           ws.send(JSON.stringify(["NOTICE", "error: " + e]));
