@@ -572,9 +572,7 @@ export class RelayInfoServer {
       const last = lastCreatedAtAndMetadataPerPubkey.get(author);
       if (last) {
         try {
-          const event = JSON.parse(last[1]);
-          let eventJSON = JSON.stringify(["EVENT", sub, event]);
-          ws.send(eventJSON);
+          ws.send('["EVENT",' + JSON.stringify(sub) + "," + last[1] + "]");
         } catch (err) {}
       }
     }
@@ -582,9 +580,7 @@ export class RelayInfoServer {
       const last = lastCreatedAtAndContactsPerPubkey.get(author);
       if (last) {
         try {
-          const event = JSON.parse(last[1]);
-          let eventJSON = JSON.stringify(["EVENT", sub, event]);
-          ws.send(eventJSON);
+          ws.send('["EVENT",' + JSON.stringify(sub) + "," + last[1] + "]");
         } catch (err) {}
       }
     }
