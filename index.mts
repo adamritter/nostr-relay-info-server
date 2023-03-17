@@ -17,7 +17,7 @@ import {IncomingMessage, ServerResponse} from "http";
 import fetch from "node-fetch";
 import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
-import {matchFilters, nip19} from "nostr-tools";
+import {matchFilters, nip19, getEventHash} from "nostr-tools";
 
 const fs = require("fs");
 const v8 = require("v8");
@@ -555,16 +555,16 @@ export class RelayInfoServer {
     if (!filter.kinds || filter.kinds.includes(10003)) {
       const last = lastCreatedAtAndRelayIndicesPerPubkey.get(author);
       if (last) {
-        let eventJSON = JSON.stringify([
-          "EVENT",
-          sub,
-          {
-            created_at: last[0],
-            pubkey: author,
-            content: JSON.stringify(last[1].map((i) => allWriteRelays[i])),
-            kind: 10003,
-          },
-        ]);
+        let event = {
+          id: "",
+          kind: 10003,
+          pubkey: author,
+          tags: [],
+          created_at: last[0],
+          content: JSON.stringify(last[1].map((i) => allWriteRelays[i])),
+        };
+        event.id = getEventHash(event);
+        let eventJSON = JSON.stringify(["EVENT", sub, event]);
         ws.send(eventJSON);
       }
     }
@@ -648,6 +648,14 @@ export class RelayInfoServer {
                         count++;
                       } catch (err) {}
                     }
+                  }
+                }
+              } else if (typeof filter.search === "string") {
+                if (!filter.kinds || filter.kinds.includes(0)) {
+                  for (const r of search(filter.search)) {
+                    ws.send(
+                      '["EVENT",' + JSON.stringify(sub) + "," + r[1] + "]"
+                    );
                   }
                 }
               } else {
@@ -952,6 +960,62 @@ function top() {
   return fs.readFileSync("top.html");
 }
 
+function search(query: string): [number, string, string][] {
+  if (query.length === 0) {
+    return [];
+  } else {
+    // binary search in authors array first and last index that starts with query
+    let first = 0;
+    let last = authors.length - 1;
+    let middle = Math.floor((first + last) / 2);
+    while (first <= last) {
+      if (authors[middle][0].startsWith(query)) {
+        break;
+      } else if (authors[middle][0] < query) {
+        first = middle + 1;
+      } else {
+        last = middle - 1;
+      }
+      middle = Math.floor((first + last) / 2);
+    }
+    if (first > last) {
+      return [];
+    } else {
+      let firstIndex = middle;
+      while (firstIndex > 0 && authors[firstIndex - 1][0].startsWith(query)) {
+        firstIndex--;
+      }
+      let r: any[] = [];
+      let lowest = 0;
+      while (authors[firstIndex][0]?.startsWith(query)) {
+        if (
+          authors[firstIndex][2] >= lowest &&
+          !r.find((a) => a[1] === authors[firstIndex][1])
+        ) {
+          r.push(authors[firstIndex]);
+          if (r.length > 5) {
+            const id: string = r.find((a) => a[2] === lowest)?.[1];
+            r = r.filter((a) => a[1] !== id);
+            lowest = r.reduce((a, b) => (a[2] < b[2] ? a : b))[2];
+          }
+        }
+        firstIndex++;
+      }
+      r.sort((a, b) => b[2] - a[2]);
+      const r2 = [];
+      for (let i = 0; i < r.length; i++) {
+        const a = r[i];
+        const md = lastCreatedAtAndMetadataPerPubkey.get(a[1]);
+        if (md) {
+          r2.push([a[2], md[1], npubEncode(a[1])]);
+        }
+      }
+      // @ts-ignore
+      return r2;
+    }
+  }
+}
+
 function app(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1014,61 +1078,9 @@ function app(
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
     const query = decodeURIComponent(req.url.slice(8, -5));
-    if (query.length === 0) {
-      writeJSONHeader(res, 200);
-      res.end("[]");
-    } else {
-      // binary search in authors array first and last index that starts with query
-      let first = 0;
-      let last = authors.length - 1;
-      let middle = Math.floor((first + last) / 2);
-      while (first <= last) {
-        if (authors[middle][0].startsWith(query)) {
-          break;
-        } else if (authors[middle][0] < query) {
-          first = middle + 1;
-        } else {
-          last = middle - 1;
-        }
-        middle = Math.floor((first + last) / 2);
-      }
-      if (first > last) {
-        writeJSONHeader(res, 200);
-        res.end("[]");
-      } else {
-        let firstIndex = middle;
-        while (firstIndex > 0 && authors[firstIndex - 1][0].startsWith(query)) {
-          firstIndex--;
-        }
-        writeJSONHeader(res, 200);
-        let r: any[] = [];
-        let lowest = 0;
-        while (authors[firstIndex][0]?.startsWith(query)) {
-          if (
-            authors[firstIndex][2] >= lowest &&
-            !r.find((a) => a[1] === authors[firstIndex][1])
-          ) {
-            r.push(authors[firstIndex]);
-            if (r.length > 5) {
-              const id: string = r.find((a) => a[2] === lowest)?.[1];
-              r = r.filter((a) => a[1] !== id);
-              lowest = r.reduce((a, b) => (a[2] < b[2] ? a : b))[2];
-            }
-          }
-          firstIndex++;
-        }
-        r.sort((a, b) => b[2] - a[2]);
-        const r2 = [];
-        for (let i = 0; i < r.length; i++) {
-          const a = r[i];
-          const md = lastCreatedAtAndMetadataPerPubkey.get(a[1]);
-          if (md) {
-            r2.push([a[2], JSON.parse(md[1]), npubEncode(a[1])]);
-          }
-        }
-        res.end(JSON.stringify(r2));
-      }
-    }
+    let r = search(query);
+    writeJSONHeader(res, 200);
+    res.end(JSON.stringify(r.map((rr) => [rr[0], JSON.parse(rr[1]), rr[2]])));
   } else if (req.url?.startsWith("/") && req.url.length === 65) {
     const pubkey = req.url.slice(1);
     const metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
