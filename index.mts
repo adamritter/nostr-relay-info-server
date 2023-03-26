@@ -13,131 +13,21 @@
 // ["COUNT", "", {kinds: [3], '#p': [<pubkey>]}]
 // ["COUNT", "", {count: 238}]
 
-import {IncomingMessage, ServerResponse} from "http";
+import {IncomingMessage, Server, ServerResponse} from "http";
 import fetch from "node-fetch";
 import {RelayPool} from "nostr-relaypool";
 import {Event} from "nostr-relaypool/event";
-import {matchFilters, nip19, getEventHash} from "nostr-tools";
+import {nip19} from "nostr-tools";
+import {writeMapToFile, readMapFromFile} from "./bigfile.mjs";
+import {search} from "./search.mjs";
 
 const fs = require("fs");
 const v8 = require("v8");
 
-// Big file handling
-
-function writeEntry(fd: number, entry: any[]) {
-  let json = JSON.stringify(entry);
-  let data = Buffer.from(json, "utf8");
-  let l = data.length.toString(36);
-  // Prefer big blocks, max 36MB by default
-  while (l.length < 5) {
-    l = "0" + l;
-  }
-  writeBytes(fd, Buffer.from(l + "|", "utf8"));
-  writeBytes(fd, data);
-  writeBytes(fd, Buffer.from("\n", "utf8"));
-}
-
-function readBytes(fd: number, l: number) {
-  const r = Buffer.alloc(l);
-  let pos = 0;
-  while (pos < l) {
-    let read = fs.readSync(fd, r, pos, l - pos);
-    if (read === 0) {
-      return undefined;
-    }
-    pos += read;
-  }
-  return r;
-}
-
-function writeBytes(fd: number, data: Buffer) {
-  let pos = 0;
-  let l = data.length;
-  while (pos < l) {
-    let written = fs.writeSync(fd, data, pos, l - pos);
-    if (written === 0) {
-      throw new Error("Error writing " + l + "bytes");
-    }
-    pos += written;
-  }
-}
-
-function readEntry(fd: number) {
-  const r: Buffer | undefined = readBytes(fd, 6);
-  if (!r) {
-    return undefined;
-  }
-  const rs = r.toString();
-  if (rs?.[5] !== "|") {
-    return undefined;
-  }
-  let length: number = Number.parseInt(rs.slice(0, 5), 36);
-  const data: Buffer | undefined = readBytes(fd, length);
-  if (!data) {
-    throw new Error("Error reading " + length + "bytes");
-  }
-  const datas = data.toString();
-
-  let last: string | undefined = readBytes(fd, 1)?.toString();
-  if (last !== "\n") {
-    throw new Error("Not newline at end of entry");
-  }
-  return JSON.parse(datas);
-}
-
-function writeEntriesToFile(path: string, entries: any[]) {
-  console.log("Writing entries to " + path);
-  const fd = fs.openSync(path, "w");
-  let body = [];
-  for (const entry of entries) {
-    body.push(entry);
-    if (body.length === 100) {
-      writeEntry(fd, body);
-      body = [];
-    }
-  }
-  if (body.length > 0) {
-    writeEntry(fd, body);
-  }
-  fs.closeSync(fd);
-}
-
-function writeObjectToFile(path: string, obj: Object) {
-  return writeEntriesToFile(path, Object.entries(obj));
-}
-
-function writeMapToFile(path: string, map: Map) {
-  return writeEntriesToFile(path, map.entries());
-}
-
-function readObjectFromFile(path: string) {
-  let fd = fs.openSync(path, "r");
-  let kv = readEntry(fd);
-  let r = {};
-  while (kv) {
-    for (let kv2 of kv) {
-      r[kv2[0]] = kv2[1];
-    }
-    kv = readEntry(fd);
-  }
-  return r;
-}
-
-function readMapFromFile(path: string) {
-  let fd = fs.openSync(path, "r");
-  let kv = readEntry(fd);
-  let r = new Map();
-  while (kv) {
-    for (let kv2 of kv) {
-      r.set(kv2[0], kv2[1]);
-    }
-    kv = readEntry(fd);
-  }
-  return r;
-}
-
 const oldestCreatedAtPerRelay = new Map<string, number>();
 const newestCreatedAtPerRelay = new Map<string, number[]>();
+// const oldestCreatedAtPerRelayForRelayListMetadata = new Map<string, number>();
+// const newestCreatedAtPerRelayForRelayListMetadata = new Map<string, number[]>();
 
 const allWriteRelays: string[] = [];
 const mainWriteRelays: string[] = [];
@@ -157,6 +47,10 @@ const lastCreatedAtAndRelayIndicesPerPubkey = new Map<
 
 let lastCreatedAtAndMetadataPerPubkey = new Map<string, [number, string]>();
 let lastCreatedAtAndContactsPerPubkey = new Map<string, [number, string]>();
+// let lastCreatedAtAndRelayListMetadataPerPubkey = new Map<
+//   string,
+//   [number, string]
+// >();
 const authors: [string, string, number][] = []; // [name, pubkey, followerCount]
 
 const followers = new Map<string, string[]>();
@@ -280,7 +174,7 @@ function renameIfNotSmallerSync(from: string, to: string) {
   }
 }
 
-function onevent(event: Event, afterEose: boolean, url: string | undefined) {
+function onevent03(event: Event, afterEose: boolean, url: string | undefined) {
   if (event.kind === 3) {
     oncontact(event, afterEose, url);
     onevent3(event, afterEose, url);
@@ -379,6 +273,8 @@ function onevent3(event: Event, afterEose: boolean, url: string | undefined) {
 function subscribe(
   relayPool: RelayPool,
   relays: string[],
+  kinds: number[],
+  onevent: (event: Event, afterEose: boolean, url: string | undefined) => void,
   until?: number,
   since?: number
 ) {
@@ -386,14 +282,14 @@ function subscribe(
     return;
   }
   relayPool.subscribe(
-    [{kinds: [0, 3], until, since}],
+    [{kinds, until, since}],
     relays,
     onevent,
     undefined,
     (url, minCreatedAt) => {
       console.log("EOSE", url, minCreatedAt);
       if (minCreatedAt < Infinity) {
-        subscribe(relayPool, [url], minCreatedAt - 1);
+        subscribe(relayPool, [url], kinds, onevent, minCreatedAt - 1);
       }
     },
     {unsubscribeOnEose: until !== undefined}
@@ -415,23 +311,11 @@ async function getRelays() {
 }
 
 function loadData(): boolean {
-  let data, metadata, contacts;
+  let data;
   try {
     data = JSON.parse(fs.readFileSync("./data.json"));
     lastCreatedAtAndMetadataPerPubkey = readMapFromFile("./metadata.bjson");
     lastCreatedAtAndContactsPerPubkey = readMapFromFile("./contacts.bjson");
-    // metadata = JSON.parse(fs.readFileSync("./metadata.json"));
-    // lastCreatedAtAndMetadataPerPubkey.clear();
-    // lastCreatedAtAndContactsPerPubkey.clear();
-    // contacts = JSON.parse(fs.readFileSync("./contacts.json"));
-    // for (let [k, v] of Object.entries(metadata)) {
-    //   // @ts-ignore
-    //   lastCreatedAtAndMetadataPerPubkey.set(k, v);
-    // }
-    // for (let [k, v] of Object.entries(contacts)) {
-    //   // @ts-ignore
-    //   lastCreatedAtAndContactsPerPubkey.set(k, v);
-    // }
   } catch (err) {
     console.error("error loading data", err);
     return false;
@@ -475,9 +359,6 @@ function loadData(): boolean {
   return true;
 }
 
-import {Filter} from "nostr-tools";
-import WebSocket from "ws";
-
 function writeJSONHeader(res: ServerResponse, errorCode: number) {
   res.writeHead(errorCode, {
     "Content-Type": "application/json; charset=utf-8",
@@ -486,18 +367,11 @@ function writeJSONHeader(res: ServerResponse, errorCode: number) {
 }
 
 const root = process.argv.includes("--root");
-const relayInfoServerHost = process.argv.includes("--relay-info-server-host")
-  ? process.argv[process.argv.indexOf("--relay-info-server-host") + 1]
-  : "localhost";
 
-const allowGlobalSubscriptions = process.argv.includes(
-  "--allow-global-subscriptions"
-);
-const allowContinuingSubscriptions = process.argv.includes(
-  "--allow-continuing-subscriptions"
-);
-
-function getWriteRelaysFromContactList(event: {content: string}) {
+function getWriteRelaysFromContactList(event: {
+  content: string;
+  pubkey: string;
+}) {
   let content;
   try {
     content = JSON.parse(event.content);
@@ -540,256 +414,6 @@ function writeRelays(pubkey: string) {
   return getWriteRelaysFromContactList(contactList);
 }
 
-export class RelayInfoServer {
-  wss: WebSocket.Server;
-  subs: Map<string, Filter[]> = new Map();
-  connections: Set<WebSocket> = new Set();
-  totalSubscriptions = 0;
-
-  #emitEventForAuthor(
-    ws: WebSocket.WebSocket,
-    sub: string,
-    author: string,
-    filter: any
-  ) {
-    if (!filter.kinds || filter.kinds.includes(10003)) {
-      const last = lastCreatedAtAndRelayIndicesPerPubkey.get(author);
-      if (last) {
-        let event = {
-          id: "",
-          kind: 10003,
-          pubkey: author,
-          tags: [],
-          created_at: last[0],
-          content: JSON.stringify(last[1].map((i) => allWriteRelays[i])),
-        };
-        event.id = getEventHash(event);
-        let eventJSON = JSON.stringify(["EVENT", sub, event]);
-        ws.send(eventJSON);
-      }
-    }
-    if (!filter.kinds || filter.kinds.includes(0)) {
-      const last = lastCreatedAtAndMetadataPerPubkey.get(author);
-      if (last) {
-        try {
-          ws.send('["EVENT",' + JSON.stringify(sub) + "," + last[1] + "]");
-        } catch (err) {}
-      }
-    }
-    if (!filter.kinds || filter.kinds.includes(3)) {
-      const last = lastCreatedAtAndContactsPerPubkey.get(author);
-      if (last) {
-        try {
-          ws.send('["EVENT",' + JSON.stringify(sub) + "," + last[1] + "]");
-        } catch (err) {}
-      }
-    }
-  }
-  constructor(
-    server = undefined,
-    port = root ? 81 : 8081,
-    host = relayInfoServerHost
-  ) {
-    if (server) {
-      this.wss = new WebSocket.Server({server, perMessageDeflate: true});
-    } else {
-      this.wss = new WebSocket.Server({port, host, perMessageDeflate: true});
-      console.log("RelayInfoServer listening on ws://" + host + ":" + port);
-    }
-    this.wss.on("connection", (ws) => {
-      this.connections.add(ws);
-      ws.on("message", (message) => {
-        const start = performance.now();
-        let data;
-        try {
-          data = JSON.parse(message.toString());
-        } catch (e) {
-          ws.send(
-            JSON.stringify(["NOTICE", "invalid json:", message.toString()])
-          );
-        }
-        try {
-          if (data && data[0] === "REQ") {
-            const sub = data[1];
-            const filters = data.slice(2);
-            this.totalSubscriptions++;
-            this.subs.set(sub, filters);
-            for (const filter of filters) {
-              if (filter.kinds && !Array.isArray(filter.kinds)) {
-                continue;
-              }
-              if (
-                Array.isArray(filter["#p"]) &&
-                (!filter.kinds || filter.kinds.includes(3))
-              ) {
-                let limit = 200;
-                if (filter.limit && filter.limit < 200) {
-                  limit = filter.limit;
-                }
-                let count = 0;
-                for (const author of filter["#p"]) {
-                  for (const follower of followers.get(author) || []) {
-                    if (count >= limit) {
-                      break;
-                    }
-                    const contactList =
-                      lastCreatedAtAndContactsPerPubkey.get(follower);
-                    if (contactList && contactList[1]) {
-                      try {
-                        // const contacts = JSON.parse(contactList[1]);
-                        // ws.send(JSON.stringify(["EVENT", sub, contacts]));
-                        ws.send(
-                          '["EVENT",' +
-                            JSON.stringify(sub) +
-                            "," +
-                            contactList[1] +
-                            "]"
-                        );
-                        count++;
-                      } catch (err) {}
-                    }
-                  }
-                }
-              } else if (typeof filter.search === "string") {
-                if (!filter.kinds || filter.kinds.includes(0)) {
-                  for (const r of search(filter.search)) {
-                    ws.send(
-                      '["EVENT",' + JSON.stringify(sub) + "," + r[1] + "]"
-                    );
-                  }
-                }
-              } else {
-                if (
-                  filter.kinds &&
-                  !filter.kinds.includes(10003) &&
-                  !filter.kinds.includes(0) &&
-                  !filter.kinds.includes(3)
-                ) {
-                  continue;
-                }
-                if (filter.authors && Array.isArray(filter.authors)) {
-                  for (const author of filter.authors) {
-                    this.#emitEventForAuthor(ws, sub, author, filter);
-                  }
-                } else if (allowGlobalSubscriptions) {
-                  const authors = new Set(
-                    Array.from(
-                      lastCreatedAtAndRelayIndicesPerPubkey.keys()
-                    ).concat(
-                      Array.from(
-                        lastCreatedAtAndMetadataPerPubkey.keys()
-                      ).concat(
-                        Array.from(lastCreatedAtAndContactsPerPubkey.keys())
-                      )
-                    )
-                  );
-                  for (const author of authors) {
-                    this.#emitEventForAuthor(ws, sub, author, filter);
-                  }
-                }
-              }
-            }
-            ws.send(JSON.stringify(["EOSE", sub]));
-          } else if (data && data[0] === "EVENT") {
-            if (!allowContinuingSubscriptions) {
-              return;
-            }
-            for (let [sub, filters] of this.subs.entries()) {
-              if (matchFilters(filters, data[2])) {
-                ws.send(JSON.stringify(["EVENT", sub, data[2]]));
-              }
-            }
-          } else if (data && data[0] === "CLOSE") {
-            const sub = data[1];
-            this.subs.delete(sub);
-          } else if (data && data[0] === "COUNT") {
-            const sub = data[1];
-            const filters = data.slice(2);
-            const counts = [];
-            for (const filter of filters) {
-              if (
-                filter &&
-                Array.isArray(filter.kinds) &&
-                filter.kinds.length === 1 &&
-                filter.kinds[0] === 3 &&
-                filter["#p"]
-              ) {
-                if (
-                  Array.isArray(filter.group_by) &&
-                  filter.group_by.length === 1 &&
-                  filter.group_by[0] === "pubkey"
-                ) {
-                  if (filter["#p"].length === 1) {
-                    const fs =
-                      followers.get(filter["#p"][0])?.slice(0, 1000) || [];
-                    counts.push(fs.map((f) => ({pubkey: f, count: 1})));
-                  } else {
-                    const byPubKey = new Map();
-                    for (const pubkey of filter["#p"]) {
-                      for (const follower of followers.get(pubkey) || []) {
-                        byPubKey.set(
-                          follower,
-                          (byPubKey.get(follower) || 0) + 1
-                        );
-                      }
-                    }
-                    const r = [];
-                    for (const [pubkey, count] of byPubKey.entries()) {
-                      r.push({
-                        pubkey,
-                        count,
-                        f: followers.get(pubkey)?.length || 0,
-                      });
-                    }
-                    r.sort((a, b) => b.f - a.f);
-                    for (const e of r) {
-                      e.f = undefined;
-                    }
-                    counts.push(r);
-                  }
-                } else if (!filter.group_by) {
-                  let count = 0;
-                  for (const pubkey of filter["#p"]) {
-                    count += followers.get(pubkey)?.length || 0;
-                  }
-                  counts.push({count});
-                } else {
-                  counts.push(null);
-                }
-              } else {
-                counts.push(null);
-              }
-            }
-            ws.send(JSON.stringify(["COUNT", sub, ...counts]));
-          }
-          stats.push([
-            performance.now() - start,
-            JSON.stringify(data),
-            Date.now(),
-          ]);
-          if (stats.length > 1000) {
-            stats.shift();
-          }
-        } catch (e) {
-          ws.send(JSON.stringify(["NOTICE", "error: " + e]));
-          errors.push([JSON.stringify(data), e]);
-          if (errors.length > 100) {
-            errors.shift();
-          }
-        }
-      });
-    });
-  }
-  async close(): Promise<void> {
-    new Promise((resolve) => this.wss.close(resolve));
-  }
-  disconnectAll() {
-    for (const ws of this.connections) {
-      ws.close();
-    }
-  }
-}
-
 async function serveNew() {
   let relays = await getRelays();
   if (relays.length === 0) {
@@ -806,11 +430,11 @@ async function serveNew() {
   const relayPool = new RelayPool(relays);
 
   for (let relay of relays) {
-    subscribe(relayPool, [relay]);
+    subscribe(relayPool, [relay], [0, 3], onevent03);
   }
   setTimeout(saveData, 10 * 1000);
   setInterval(saveData, 60 * 1000);
-  new RelayInfoServer();
+  newRelayInfoServer();
 }
 
 async function continueServe() {
@@ -820,7 +444,9 @@ async function continueServe() {
   }
   if (fs.existsSync("contacts.alsoload.bjson")) {
     console.log("Loading contacts.alsoload.bjson");
-    const contacts: Map = readMapFromFile("contacts.alsoload.bjson");
+    const contacts: Map<string, [number, string]> = readMapFromFile(
+      "contacts.alsoload.bjson"
+    );
     let i = 0,
       changed = 0,
       fresh = 0;
@@ -853,40 +479,26 @@ async function continueServe() {
   const relayPool = new RelayPool(relays, {keepSignature: true, noCache: true});
 
   for (let relay of relays) {
-    subscribe(relayPool, [relay], oldestCreatedAtPerRelay.get(relay));
+    subscribe(
+      relayPool,
+      [relay],
+      [0, 3],
+      onevent03,
+      oldestCreatedAtPerRelay.get(relay)
+    );
     const newestCreatedAts = newestCreatedAtPerRelay.get(relay);
     subscribe(
       relayPool,
       [relay],
+      [0, 3],
+      onevent03,
       undefined,
       newestCreatedAts?.[newestCreatedAts.length - 1]
     );
   }
-  new RelayInfoServer();
+  newRelayInfoServer();
   setTimeout(saveData, 10 * 1000);
   setInterval(saveData, 60 * 1000);
-}
-
-function getNameByPubKey(pubkey: string) {
-  let v = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-  if (!v) {
-    return pubkey;
-  }
-  let md = JSON.parse(v[1]);
-  let md2 = JSON.parse(md.content);
-  let name = md2.display_name || md2.name || md2.nip05 || md.pubkey;
-  return name;
-}
-function getPicture(pubkey: string) {
-  let v = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-  if (!v) {
-    return;
-  }
-  try {
-    let md = JSON.parse(v[1]);
-    let md2 = JSON.parse(md.content);
-    return md2.picture;
-  } catch (e) {}
 }
 
 function npubEncode(pubkey: string) {
@@ -960,62 +572,6 @@ function top() {
   return fs.readFileSync("top.html");
 }
 
-function search(query: string): [number, string, string][] {
-  if (query.length === 0) {
-    return [];
-  } else {
-    // binary search in authors array first and last index that starts with query
-    let first = 0;
-    let last = authors.length - 1;
-    let middle = Math.floor((first + last) / 2);
-    while (first <= last) {
-      if (authors[middle][0].startsWith(query)) {
-        break;
-      } else if (authors[middle][0] < query) {
-        first = middle + 1;
-      } else {
-        last = middle - 1;
-      }
-      middle = Math.floor((first + last) / 2);
-    }
-    if (first > last) {
-      return [];
-    } else {
-      let firstIndex = middle;
-      while (firstIndex > 0 && authors[firstIndex - 1][0].startsWith(query)) {
-        firstIndex--;
-      }
-      let r: any[] = [];
-      let lowest = 0;
-      while (authors[firstIndex][0]?.startsWith(query)) {
-        if (
-          authors[firstIndex][2] >= lowest &&
-          !r.find((a) => a[1] === authors[firstIndex][1])
-        ) {
-          r.push(authors[firstIndex]);
-          if (r.length > 5) {
-            const id: string = r.find((a) => a[2] === lowest)?.[1];
-            r = r.filter((a) => a[1] !== id);
-            lowest = r.reduce((a, b) => (a[2] < b[2] ? a : b))[2];
-          }
-        }
-        firstIndex++;
-      }
-      r.sort((a, b) => b[2] - a[2]);
-      const r2 = [];
-      for (let i = 0; i < r.length; i++) {
-        const a = r[i];
-        const md = lastCreatedAtAndMetadataPerPubkey.get(a[1]);
-        if (md) {
-          r2.push([a[2], md[1], npubEncode(a[1])]);
-        }
-      }
-      // @ts-ignore
-      return r2;
-    }
-  }
-}
-
 function app(
   req: IncomingMessage,
   res: ServerResponse,
@@ -1078,7 +634,7 @@ function app(
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
     const query = decodeURIComponent(req.url.slice(8, -5));
-    let r = search(query);
+    let r = search(query, authors, lastCreatedAtAndMetadataPerPubkey);
     writeJSONHeader(res, 200);
     res.end(JSON.stringify(r.map((rr) => [rr[0], JSON.parse(rr[1]), rr[2]])));
   } else if (req.url?.startsWith("/") && req.url.length === 65) {
@@ -1194,8 +750,10 @@ function app(
             body.push("<tr><td>");
             body.push(k);
             body.push("</td><td>");
+            // @ts-ignore
             body.push(v?.write);
             body.push("</td><td>");
+            // @ts-ignore
             body.push(v?.read);
             body.push("</td></tr>");
           }
@@ -1240,9 +798,11 @@ function app(
       writeJSONHeader(res, 200);
       let contacts, metadata;
       try {
+        // @ts-ignore
         contacts = JSON.parse(contactsJSON);
       } catch (e) {}
       try {
+        // @ts-ignore
         metadata = JSON.parse(metadataJSON);
       } catch (e) {}
       let r = {
@@ -1296,7 +856,7 @@ function app(
       res.end("not found");
     }
   } else if (req.url?.match("followers(/([0-9]+))?$")) {
-    let page = parseInt(req.url?.match("followers(/([0-9]+))?$")[2] || "1");
+    let page = parseInt(req.url?.match("followers(/([0-9]+))?$")?.[2] || "1");
     let pubkey = req.url.split("/")[1];
     if (pubkey.startsWith("npub")) {
       pubkey = npubDecode(pubkey);
@@ -1419,6 +979,7 @@ function app(
 }
 
 import {createServer} from "http";
+import {RelayInfoServer} from "./relayinfoserver.mjs";
 let stats: any[] = [];
 let errors: any[] = [];
 
@@ -1450,16 +1011,16 @@ function printFollowersWithoutMetadataStatistic() {
     kk = 0,
     ll = 0;
   for (let [k, v] of followers.entries()) {
-    if (v.size > 100 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
+    if (v.length > 100 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
       ii++;
     }
-    if (v.size > 10 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
+    if (v.length > 10 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
       jj++;
     }
-    if (v.size > 1 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
+    if (v.length > 1 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
       kk++;
     }
-    if (v.size > 0 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
+    if (v.length > 0 && !lastCreatedAtAndMetadataPerPubkey.get(k)) {
       ll++;
     }
   }
@@ -1520,6 +1081,24 @@ async function updateMetadataForPopularAuthors() {
   setInterval(saveData, 60 * 1000);
 }
 
+function newRelayInfoServer(
+  server?: Server<typeof IncomingMessage, typeof ServerResponse>
+) {
+  return new RelayInfoServer(
+    (server = undefined),
+    undefined,
+    undefined,
+    lastCreatedAtAndRelayIndicesPerPubkey,
+    lastCreatedAtAndMetadataPerPubkey,
+    lastCreatedAtAndContactsPerPubkey,
+    allWriteRelays,
+    stats,
+    errors,
+    followers,
+    authors
+  );
+}
+
 const updateData = process.argv.includes("--update-data");
 const updateMetadata = process.argv.includes("--update-metadata");
 
@@ -1533,7 +1112,7 @@ if (updateData) {
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
   updateMetadataForPopularAuthors();
   let server = httpServe();
-  new RelayInfoServer(server);
+  newRelayInfoServer(server);
 } else {
   loadData();
   computeFollowers();
@@ -1541,5 +1120,5 @@ if (updateData) {
   printFollowersWithoutMetadataStatistic();
   console.log(lastCreatedAtAndMetadataPerPubkey.size);
   let server = httpServe();
-  new RelayInfoServer(server);
+  newRelayInfoServer(server);
 }
