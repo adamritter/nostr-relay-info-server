@@ -2,11 +2,7 @@ import WebSocket from "ws";
 import {Filter} from "nostr-tools";
 import {matchFilters, getEventHash} from "nostr-tools";
 import {search} from "./search.mjs";
-
-const root = process.argv.includes("--root");
-const relayInfoServerHost = process.argv.includes("--relay-info-server-host")
-  ? process.argv[process.argv.indexOf("--relay-info-server-host") + 1]
-  : "localhost";
+import {IncomingMessage, Server, ServerResponse} from "http";
 
 const allowGlobalSubscriptions = process.argv.includes(
   "--allow-global-subscriptions"
@@ -70,9 +66,9 @@ export class RelayInfoServer {
   }
 
   constructor(
-    server = undefined,
-    port = root ? 81 : 8081,
-    host = relayInfoServerHost,
+    server: Server<typeof IncomingMessage, typeof ServerResponse> | undefined,
+    port: number,
+    host: string,
     lastCreatedAtAndRelayIndicesPerPubkey: Map<string, [number, number[]]>,
     lastCreatedAtAndMetadataPerPubkey: Map<string, [number, string]>,
     lastCreatedAtAndContactsPerPubkey: Map<string, [number, string]>,
@@ -94,6 +90,7 @@ export class RelayInfoServer {
 
     if (server) {
       this.wss = new WebSocket.Server({server, perMessageDeflate: true});
+      console.log("RelayInfoServer listening on the same port as the server");
     } else {
       this.wss = new WebSocket.Server({port, host, perMessageDeflate: true});
       console.log("RelayInfoServer listening on ws://" + host + ":" + port);

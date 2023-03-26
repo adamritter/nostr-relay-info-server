@@ -1081,13 +1081,17 @@ async function updateMetadataForPopularAuthors() {
   setInterval(saveData, 60 * 1000);
 }
 
+const relayInfoServerHost = process.argv.includes("--relay-info-server-host")
+  ? process.argv[process.argv.indexOf("--relay-info-server-host") + 1]
+  : "localhost";
+
 function newRelayInfoServer(
   server?: Server<typeof IncomingMessage, typeof ServerResponse>
 ) {
   return new RelayInfoServer(
-    (server = undefined),
-    undefined,
-    undefined,
+    server,
+    root ? 81 : 8081,
+    relayInfoServerHost,
     lastCreatedAtAndRelayIndicesPerPubkey,
     lastCreatedAtAndMetadataPerPubkey,
     lastCreatedAtAndContactsPerPubkey,
