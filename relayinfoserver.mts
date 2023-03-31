@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import {Filter} from "nostr-tools";
+import {Filter, signEvent} from "nostr-tools";
 import {matchFilters, getEventHash} from "nostr-tools";
 import {search} from "./search.mjs";
 import {IncomingMessage, Server, ServerResponse} from "http";
@@ -10,6 +10,8 @@ const allowGlobalSubscriptions = process.argv.includes(
 const allowContinuingSubscriptions = process.argv.includes(
   "--allow-continuing-subscriptions"
 );
+
+import {generatePrivateKey, getPublicKey} from "nostr-tools";
 
 export class RelayInfoServer {
   wss: WebSocket.Server;
@@ -24,6 +26,8 @@ export class RelayInfoServer {
   errors: [string, any][];
   followers: Map<string, string[]>;
   authors: [string, string, number][];
+  serverPubKeyHex: string;
+  serverPrivateKeyHex: string;
 
   #emitEventForAuthor(
     ws: WebSocket.WebSocket,
@@ -31,22 +35,6 @@ export class RelayInfoServer {
     author: string,
     filter: any
   ) {
-    if (!filter.kinds || filter.kinds.includes(10003)) {
-      const last = this.lastCreatedAtAndRelayIndicesPerPubkey.get(author);
-      if (last && (!filter.since || filter.since <= last[0])) {
-        let event = {
-          id: "",
-          kind: 10003,
-          pubkey: author,
-          tags: [],
-          created_at: last[0],
-          content: JSON.stringify(last[1].map((i) => this.allWriteRelays[i])),
-        };
-        event.id = getEventHash(event);
-        let eventJSON = JSON.stringify(["EVENT", sub, event]);
-        ws.send(eventJSON);
-      }
-    }
     if (!filter.kinds || filter.kinds.includes(0)) {
       const last = this.lastCreatedAtAndMetadataPerPubkey.get(author);
       if (last && (!filter.since || filter.since <= last[0])) {
@@ -63,6 +51,36 @@ export class RelayInfoServer {
         } catch (err) {}
       }
     }
+  }
+
+  #emitWriteRelaysEventForAuthor(
+    ws: WebSocket.WebSocket,
+    sub: string,
+    author: string,
+    since: number | undefined
+  ): boolean {
+    const last = this.lastCreatedAtAndRelayIndicesPerPubkey.get(author);
+    if (last && (!since || since <= last[0])) {
+      let event = {
+        id: "",
+        kind: 10003,
+        pubkey: this.serverPubKeyHex,
+        tags: [["p", author]],
+        created_at: last[0],
+        content: JSON.stringify(last[1].map((i) => this.allWriteRelays[i])),
+        sig: "",
+      };
+      event.id = getEventHash(event);
+      event.sig = signEvent(event, this.serverPrivateKeyHex);
+      let eventJSON = JSON.stringify(["EVENT", sub, event]);
+      try {
+        ws.send(eventJSON);
+      } catch (err) {
+        return false;
+      }
+      return true;
+    }
+    return false;
   }
 
   constructor(
@@ -87,6 +105,8 @@ export class RelayInfoServer {
     this.errors = errors;
     this.followers = followers;
     this.authors = authors;
+    this.serverPrivateKeyHex = generatePrivateKey();
+    this.serverPubKeyHex = getPublicKey(this.serverPrivateKeyHex);
 
     if (server) {
       this.wss = new WebSocket.Server({server, perMessageDeflate: true});
@@ -119,7 +139,9 @@ export class RelayInfoServer {
               }
               if (
                 Array.isArray(filter["#p"]) &&
-                (!filter.kinds || filter.kinds.includes(3))
+                (!filter.kinds ||
+                  filter.kinds.includes(3) ||
+                  filter.kinds.includes(10003))
               ) {
                 let limit = 200;
                 if (filter.limit && filter.limit < 200) {
@@ -127,29 +149,45 @@ export class RelayInfoServer {
                 }
                 let count = 0;
                 for (const author of filter["#p"]) {
-                  for (const follower of followers.get(author) || []) {
-                    if (count >= limit) {
-                      break;
+                  if (!filter.kinds || filter.kinds.includes(3)) {
+                    for (const follower of followers.get(author) || []) {
+                      if (count >= limit) {
+                        break;
+                      }
+                      const contactList =
+                        lastCreatedAtAndContactsPerPubkey.get(follower);
+                      if (
+                        contactList &&
+                        contactList[1] &&
+                        (!filter.since || filter.since <= contactList[0])
+                      ) {
+                        try {
+                          ws.send(
+                            '["EVENT",' +
+                              JSON.stringify(sub) +
+                              "," +
+                              contactList[1] +
+                              "]"
+                          );
+                          count++;
+                        } catch (err) {}
+                      }
                     }
-                    const contactList =
-                      lastCreatedAtAndContactsPerPubkey.get(follower);
+                  }
+                  if (count >= limit) {
+                    break;
+                  }
+
+                  if (!filter.kinds || filter.kinds.includes(10003)) {
                     if (
-                      contactList &&
-                      contactList[1] &&
-                      (!filter.since || filter.since <= contactList[0])
+                      this.#emitWriteRelaysEventForAuthor(
+                        ws,
+                        sub,
+                        author,
+                        filter.since
+                      )
                     ) {
-                      try {
-                        // const contacts = JSON.parse(contactList[1]);
-                        // ws.send(JSON.stringify(["EVENT", sub, contacts]));
-                        ws.send(
-                          '["EVENT",' +
-                            JSON.stringify(sub) +
-                            "," +
-                            contactList[1] +
-                            "]"
-                        );
-                        count++;
-                      } catch (err) {}
+                      count++;
                     }
                   }
                 }
