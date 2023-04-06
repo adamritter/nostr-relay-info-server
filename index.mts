@@ -520,52 +520,56 @@ function npubDecode(pubkey: string): string {
 }
 
 function profile(pubkey: string) {
-  let body = [];
-  let metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
-  let mdnew, md2;
-  if (metadata) {
-    mdnew = JSON.parse(metadata[1]);
-    md2 = JSON.parse(mdnew.content);
-  }
+  try {
+    let body = [];
+    let metadata = lastCreatedAtAndMetadataPerPubkey.get(pubkey);
+    let mdnew, md2;
+    if (metadata) {
+      mdnew = JSON.parse(metadata[1]);
+      md2 = JSON.parse(mdnew.content);
+    }
 
-  let name = md2?.display_name || md2?.name || md2?.nip05 || pubkey;
+    let name = md2?.display_name || md2?.name || md2?.nip05 || pubkey;
 
-  let picture = md2?.picture;
-  body.push('<span style="display: flex; justify-content: flex-start;">');
-  if (picture) {
+    let picture = md2?.picture;
+    body.push('<span style="display: flex; justify-content: flex-start;">');
+    if (picture) {
+      body.push(
+        `<a href='/${nip19.npubEncode(
+          pubkey
+        )}'><img src='${picture}' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,60px); max-width: min(100%,60px);' width=60 height=60></a><br>`
+      );
+    } else {
+      // just leave 60px
+      body.push("<span style='width: 60px'></span>");
+    }
+    body.push("<span>");
+    if (metadata) {
+      body.push(`<a href='/${npubEncode(pubkey)}'>`);
+      if (md2.display_name) {
+        body.push(`<b style='font-size: 20px'>${md2.display_name}</b>`);
+      }
+      if (md2.name) {
+        body.push(` @${md2.name}<br>`);
+      }
+      body.push("</a><br>");
+      if (md2.nip05) {
+        body.push(`<span style='color: #34ba7c'>${md2.nip05}</span><br>`);
+      }
+      if (md2.about) {
+        body.push(`${md2.about}<br>`);
+      }
+    } else {
+      body.push(`<a href='/${npubEncode(pubkey)}'>${name}</a><br><br>`);
+    }
+
     body.push(
-      `<a href='/${nip19.npubEncode(
-        pubkey
-      )}'><img src='${picture}' style='border-radius: 50%; cursor: pointer; max-height: min(30vw,60px); max-width: min(100%,60px);' width=60 height=60></a><br>`
+      `${followers.get(pubkey)?.length || 0}  followers<br></span></span>`
     );
-  } else {
-    // just leave 60px
-    body.push("<span style='width: 60px'></span>");
+    return body.join("");
+  } catch (e) {
+    return `<span style='color: red'>error in profile ${pubkey}: ${e}</span>`;
   }
-  body.push("<span>");
-  if (metadata) {
-    body.push(`<a href='/${npubEncode(pubkey)}'>`);
-    if (md2.display_name) {
-      body.push(`<b style='font-size: 20px'>${md2.display_name}</b>`);
-    }
-    if (md2.name) {
-      body.push(` @${md2.name}<br>`);
-    }
-    body.push("</a><br>");
-    if (md2.nip05) {
-      body.push(`<span style='color: #34ba7c'>${md2.nip05}</span><br>`);
-    }
-    if (md2.about) {
-      body.push(`${md2.about}<br>`);
-    }
-  } else {
-    body.push(`<a href='/${npubEncode(pubkey)}'>${name}</a><br><br>`);
-  }
-
-  body.push(
-    `${followers.get(pubkey)?.length || 0}  followers<br></span></span>`
-  );
-  return body.join("");
 }
 
 function top() {

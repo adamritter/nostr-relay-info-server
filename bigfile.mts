@@ -112,3 +112,42 @@ export function readMapFromFile(path: string) {
   }
   return r;
 }
+
+export function readLines(
+  filePath: string,
+  lineCallback: (line: string) => void
+): void {
+  const bufferSize = 32000;
+  const buffer = Buffer.alloc(bufferSize);
+  let fileDescriptor;
+
+  try {
+    fileDescriptor = fs.openSync(filePath, "r");
+    let line = "";
+    let bytesRead;
+
+    do {
+      bytesRead = fs.readSync(fileDescriptor, buffer, 0, bufferSize, null);
+      let currentBuffer = buffer.slice(0, bytesRead).toString();
+
+      let newlineIndex = currentBuffer.indexOf("\n");
+      while (newlineIndex > -1) {
+        const chunk = currentBuffer.slice(0, newlineIndex);
+        line += chunk;
+        lineCallback(line);
+        line = "";
+
+        currentBuffer = currentBuffer.slice(newlineIndex + 1);
+        newlineIndex = currentBuffer.indexOf("\n");
+      }
+
+      line += currentBuffer;
+    } while (bytesRead === bufferSize);
+  } catch (err) {
+    console.error(`Error reading file: ${err}`);
+  } finally {
+    if (fileDescriptor) {
+      fs.closeSync(fileDescriptor);
+    }
+  }
+}
