@@ -17,6 +17,15 @@ rbr.bio {
              lb_retries 1
         }
 
+	@sveltekit3 {
+		path_regexp /$
+
+	}
+	reverse_proxy @sveltekit3 localhost:4173 localhost:8080 eu.rbr.bio:2000 {
+             lb_policy first
+             lb_retries 1
+        }
+
 	reverse_proxy localhost:8080 eu.rbr.bio:2000 {
              lb_policy first
              lb_retries 1
