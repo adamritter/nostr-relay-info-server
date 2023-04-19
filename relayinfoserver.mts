@@ -28,6 +28,7 @@ export class RelayInfoServer {
   authors: [string, string, number][];
   serverPubKeyHex: string;
   serverPrivateKeyHex: string;
+  signatureCache: Map<string, string> = new Map();
 
   #emitEventForAuthor(
     ws: WebSocket.WebSocket,
@@ -71,7 +72,12 @@ export class RelayInfoServer {
         sig: "",
       };
       event.id = getEventHash(event);
-      event.sig = signEvent(event, this.serverPrivateKeyHex);
+      if (this.signatureCache.has(event.id)) {
+        event.sig = this.signatureCache.get(event.id)!;
+      } else {
+        event.sig = signEvent(event, this.serverPrivateKeyHex);
+        this.signatureCache.set(event.id, event.sig);
+      }
       let eventJSON = JSON.stringify(["EVENT", sub, event]);
       try {
         ws.send(eventJSON);
