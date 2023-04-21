@@ -323,9 +323,13 @@ export class RelayInfoServer {
             stats.shift();
           }
         } catch (e) {
-          ws.send(JSON.stringify(["NOTICE", "error: " + e]));
           errors.push([JSON.stringify(data), e]);
-          if (errors.length > 100) {
+          try {
+            ws.send(JSON.stringify(["NOTICE", "error: " + e]));
+          } catch (ee) {
+            errors.push(["Trying to send NOTICE error", ee]);
+          }
+          while (errors.length > 100) {
             errors.shift();
           }
         }
