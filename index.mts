@@ -20,7 +20,7 @@ import {Event} from "nostr-relaypool/event";
 import {nip19} from "nostr-tools";
 import {writeMapToFile, readMapFromFile} from "./bigfile.mjs";
 import {search} from "./search.mjs";
-import {openLMDBFromFile} from "./lmdbhelper.mjs";
+import {openLMDBFromFile, getIterator} from "./lmdbhelper.mjs";
 
 let readContactsFromLMDB = false;
 
@@ -61,7 +61,9 @@ let popularFollowers: string[] = [];
 
 function computeAuthors() {
   const start = Date.now();
-  for (let [pubkey, [_, metadata]] of lastCreatedAtAndMetadataPerPubkey) {
+  for (let [pubkey, [_, metadata]] of getIterator(
+    lastCreatedAtAndMetadataPerPubkey
+  )) {
     try {
       let metadataInfos = JSON.parse(metadata);
       let content = JSON.parse(metadataInfos.content);
