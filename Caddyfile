@@ -9,7 +9,7 @@ rbr.bio {
 	reverse_proxy @sveltekit localhost:4173
 
 	@sveltekit2 {
-		path_regexp app
+		path_regexp app|worker
 
 	}
 	reverse_proxy @sveltekit2 localhost:4173 eu.rbr.bio:2000 {

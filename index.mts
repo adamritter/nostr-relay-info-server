@@ -103,7 +103,7 @@ function computeAuthors() {
 }
 
 function computeFollowers() {
-  for (let [pubkey, [_, contacts]] of lastCreatedAtAndContactsPerPubkey) {
+  for (let [pubkey, [_, contacts]] of getIterator(lastCreatedAtAndContactsPerPubkey)) {
     pubkey = pubkey.toLowerCase();
     let contactInfos = JSON.parse(contacts);
     for (let contact of contactInfos.tags) {

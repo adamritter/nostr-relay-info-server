@@ -26,6 +26,6 @@ export function getIterator(db) {
   if (db instanceof Map) {
     return db;
   } else {
-    return db.getRange();
+    return db.getRange().map(({key, value})=>[key,value])
   }
 }
