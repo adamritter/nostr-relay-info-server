@@ -20,6 +20,9 @@ import {Event} from "nostr-relaypool/event";
 import {nip19} from "nostr-tools";
 import {writeMapToFile, readMapFromFile} from "./bigfile.mjs";
 import {search} from "./search.mjs";
+import {openLMDBFromFile} from "./lmdbhelper";
+
+let readContactsFromLMDB = false;
 
 const fs = require("fs");
 const v8 = require("v8");
@@ -315,7 +318,11 @@ function loadData(): boolean {
   try {
     data = JSON.parse(fs.readFileSync("./data.json"));
     lastCreatedAtAndMetadataPerPubkey = readMapFromFile("./metadata.bjson");
-    lastCreatedAtAndContactsPerPubkey = readMapFromFile("./contacts.bjson");
+    if (readContactsFromLMDB) {
+      lastCreatedAtAndContactsPerPubkey = openLMDBFromFile("./contacts.lmdb")!;
+    } else {
+      lastCreatedAtAndContactsPerPubkey = readMapFromFile("./contacts.bjson");
+    }
   } catch (err) {
     console.error("error loading data", err);
     return false;
@@ -637,9 +644,9 @@ function app(
       );
     }
   } else if (req.url?.startsWith("/search/") && req.url?.endsWith(".json")) {
+    writeJSONHeader(res, 200);
     const query = decodeURIComponent(req.url.slice(8, -5));
     let r = search(query, authors, lastCreatedAtAndMetadataPerPubkey);
-    writeJSONHeader(res, 200);
     res.end(JSON.stringify(r.map((rr) => [rr[0], JSON.parse(rr[1]), rr[2]])));
   } else if (req.url?.startsWith("/") && req.url.length === 65) {
     const pubkey = req.url.slice(1);

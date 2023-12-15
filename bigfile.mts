@@ -1,5 +1,5 @@
 // Big file handling
-const fs = require("fs");
+import fs from "fs";
 
 function writeEntry(fd: number, entry: any[]) {
   let json = JSON.stringify(entry);
@@ -18,7 +18,7 @@ function readBytes(fd: number, l: number) {
   const r = Buffer.alloc(l);
   let pos = 0;
   while (pos < l) {
-    let read = fs.readSync(fd, r, pos, l - pos);
+    let read = fs.readSync(fd, r, pos, l - pos, null);
     if (read === 0) {
       return undefined;
     }
@@ -39,7 +39,7 @@ function writeBytes(fd: number, data: Buffer) {
   }
 }
 
-function readEntry(fd: number) {
+export function readEntry(fd: number) {
   const r: Buffer | undefined = readBytes(fd, 6);
   if (!r) {
     return undefined;
@@ -83,7 +83,7 @@ export function writeObjectToFile(path: string, obj: Object) {
   return writeEntriesToFile(path, Object.entries(obj));
 }
 
-export function writeMapToFile(path: string, map: Map) {
+export function writeMapToFile(path: string, map: Map<any, any>) {
   return writeEntriesToFile(path, map.entries());
 }
 
