@@ -144,7 +144,6 @@ function saveData() {
       lastCreatedAtAndRelayIndicesPerPubkey
     ),
   };
-  const fs = require("fs");
   fs.writeFileSync("./data.json.new", JSON.stringify(data));
   // fs.writeFileSync(
   //   "./metadata.json.new",
@@ -162,7 +161,6 @@ function saveData() {
   console.log("saved data in ", Math.round((Date.now() - time) / 1000), "s");
 }
 function renameIfNotSmallerSync(from: string, to: string) {
-  const fs = require("fs");
   if (!fs.existsSync(to)) {
     fs.renameSync(from, to);
     return;
@@ -1064,7 +1062,6 @@ async function updateMetadataForPopularAuthors() {
     console.error("error parsing relay file");
     process.exit(1);
   }
-  const fs = require("fs");
   let relays2 = JSON.parse(fs.readFileSync("relays.json"));
   relays = [...new Set(relays.concat(relays2))];
   mainWriteRelays.length = 0;

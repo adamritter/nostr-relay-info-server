@@ -9,6 +9,8 @@ Environment=NODE_OPTIONS="--max-old-space-size=8192"
 Type=simple
 User=root
 ExecStartPre=npm run build
+ExecStartPre=tsx ./bsontolmdb.mts ./contacts.bjson ./contacts.lmdb
+ExecStartPre=tsx ./bsontolmdb.mts ./metadata.bjson ./metadata.lmdb
 #ExecStart=/usr/bin/node /root/nostr-relay-info-server/dist/index.js
 ExecStart=/usr/bin/tsx /root/nostr-relay-info-server/index.mts
 Restart=always

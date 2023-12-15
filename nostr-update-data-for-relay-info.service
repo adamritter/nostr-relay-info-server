@@ -7,7 +7,7 @@ After=network.target
 Environment=NODE_OPTIONS="--max-old-space-size=8192"
 Type=simple
 User=root
-ExecStart=/usr/bin/node /root/nostr-relay-info-server/dist/index.js --update-data --relay-info-server-host localhost --allow-global-subscriptions --allow-continuing-subscriptions
+ExecStart=/usr/bin/tsx /root/nostr-relay-info-server/index.mts --update-data --relay-info-server-host localhost --allow-global-subscriptions --allow-continuing-subscriptions
 Restart=on-failure
 WorkingDirectory=/root/nostr-relay-info-server
 
