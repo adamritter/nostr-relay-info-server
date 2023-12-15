@@ -24,8 +24,8 @@ import {openLMDBFromFile} from "./lmdbhelper.mjs";
 
 let readContactsFromLMDB = false;
 
-const fs = require("fs");
-const v8 = require("v8");
+import * as fs from "fs";
+import * as v8 from "v8";
 
 const oldestCreatedAtPerRelay = new Map<string, number>();
 const newestCreatedAtPerRelay = new Map<string, number[]>();
@@ -319,7 +319,8 @@ function loadData(): boolean {
     data = JSON.parse(fs.readFileSync("./data.json"));
     lastCreatedAtAndMetadataPerPubkey = readMapFromFile("./metadata.bjson");
     if (readContactsFromLMDB) {
-      lastCreatedAtAndContactsPerPubkey = openLMDBFromFile("./contacts.lmdb")!;
+      console.log("loading from lmdb");
+      lastCreatedAtAndContactsPerPubkey = openLMDBFromFile("./contacts.lmdb");
     } else {
       lastCreatedAtAndContactsPerPubkey = readMapFromFile("./contacts.bjson");
     }
