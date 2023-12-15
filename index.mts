@@ -1129,6 +1129,7 @@ if (updateData) {
   let server = httpServe();
   newRelayInfoServer(server);
 } else {
+  readContactsFromLMDB = true;
   loadData();
   computeFollowers();
   computeAuthors();
